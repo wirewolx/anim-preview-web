@@ -79,7 +79,7 @@
 
     <p class="hint" id="f2-status">
       Полноэкранная область с отступами 32px. Вставьте скрин (Ctrl/Cmd+V, Copy as PNG в Figma)
-      или загрузите файл — он отобразится в своём оригинальном размере.
+      или загрузите файл — он отобразится в своём оригинальном (логическом) размере.
     </p>
   </section>
 
@@ -90,11 +90,11 @@
   <script src="./scripts/preview.js"></script>
   <script src="./scripts/main.js"></script>
 
-  <!-- Вставка изображения из буфера + установка реальных размеров контента -->
+  <!-- Вставка изображения из буфера + авто-логический масштаб -->
   <script>
     (function enablePasteAndSizing(){
       const stage   = document.getElementById('f2-stage');    // прокручиваемая область
-      const content = document.getElementById('f2-content');  // будет иметь размеры картинки
+      const content = document.getElementById('f2-content');  // будет иметь размеры картинки (логические)
       const bg      = document.getElementById('f2-bgImg');    // изображение
       const status  = document.getElementById('f2-status');
       const imgFile = document.getElementById('f2-imgFile');
@@ -103,22 +103,40 @@
 
       function setHint(msg){ if (status) status.textContent = msg; }
 
-      // Любая загрузка картинки -> после onload проставляем реальные размеры контента
-       function applyNaturalSize() {
-        // автоматически уменьшаем картинку в 2 раза (масштаб 0.5)
-        const scale = 0.5;
-        const w = bg.naturalWidth * scale;
-        const h = bg.naturalHeight * scale;
-      
+      // Автоматический логический масштаб под мобильные ширины (если пришёл ретиновый PNG)
+      function applyNaturalSize() {
+        const W = bg.naturalWidth;
+        const H = bg.naturalHeight;
+
+        // Кандидаты логических ширин (CSS px) для мобильных макетов
+        const MOBILE_WIDTHS = [320, 360, 375, 390, 393, 412, 414, 428];
+
+        // По умолчанию — без масштабирования
+        let targetW = W;
+
+        // Если ширина похожа на ретину (примерно 2x/3x мобильного макета) — приводим к ближайшей логической ширине
+        if (W >= 700 && W <= 2500) {
+          const approxLogical = W / 2; // чаще всего Figma копирует ~2x
+          targetW = MOBILE_WIDTHS.reduce((best, cur) =>
+            Math.abs(cur - approxLogical) < Math.abs(best - approxLogical) ? cur : best,
+          MOBILE_WIDTHS[0]);
+        }
+
+        // Масштаб и итоговые размеры
+        const scale = targetW / W;
+        const w = Math.round(W * scale);
+        const h = Math.round(H * scale);
+
+        // Контент ровно в рассчитанном логическом размере
         content.style.width  = w + 'px';
         content.style.height = h + 'px';
-      
-        // картинка растягивается на весь контент
+
+        // Картинка заполняет контент без искажений
         bg.style.width  = '100%';
         bg.style.height = '100%';
         bg.style.display = 'block';
-      
-        console.log(`🔍 Картинка ${bg.naturalWidth}×${bg.naturalHeight} → показана ${w}×${h}`);
+
+        console.log(`📐 natural ${W}×${H} → logical ${w}×${h} (scale=${(+scale.toFixed(3))})`);
       }
       bg.addEventListener('load', applyNaturalSize);
 
@@ -189,4 +207,3 @@
   </script>
 </body>
 </html>
-
