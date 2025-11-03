@@ -36,8 +36,14 @@ input[type="file"] { display:none; }
 
 /* Feature 2: Screen Preview */
 .stage-frame {
-  position:relative; width:1440px; height:800px; margin:0 auto;
-  background:#0f141c; border:1px solid #223044; border-radius:12px; overflow:hidden;
+  position: relative;
+  display: inline-block; /* важно, чтобы блок подстраивался по содержимому */
+  margin: 0 auto;
+  background: #0f141c;
+  border: 1px solid #223044;
+  border-radius: 12px;
+  overflow: hidden;
+  max-width: 100%; /* чтобы не выходил за экран */
 }
 /* ВАЖНО: теперь изображение отображается в ОРИГИНАЛЬНОМ размере,
    но не выходит за пределы 1440×800 (максимумы) */
@@ -62,3 +68,4 @@ input[type="file"] { display:none; }
 .handle.ne { right:-7px; top:-7px; cursor:nesw-resize; }
 .handle.sw { left:-7px; bottom:-7px; cursor:nesw-resize; }
 .handle.se { right:-7px; bottom:-7px; cursor:nwse-resize; }
+
