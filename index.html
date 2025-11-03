@@ -79,7 +79,7 @@
 
     <p class="hint" id="f2-status">
       Полноэкранная область с отступами 32px. Вставьте скрин (Ctrl/Cmd+V, Copy as PNG в Figma)
-      или загрузите файл — он приведётся к 375 px (моб.) или максимум 1440×968 (десктоп).
+      или загрузите файл — мобилка → 375 px, десктоп → максимум 1260 px по ширине.
     </p>
   </section>
 
@@ -90,7 +90,7 @@
   <script src="./scripts/preview.js"></script>
   <script src="./scripts/main.js"></script>
 
-  <!-- Вставка изображения из буфера + капы для моб./десктоп -->
+  <!-- Вставка изображения из буфера + лимиты: mobile 375 / desktop ≤1260 -->
   <script>
     (function enablePasteAndSizing(){
       const stage   = document.getElementById('f2-stage');    // прокручиваемая область
@@ -110,9 +110,8 @@
       const DESKTOP_WIDTHS = [1024, 1200, 1280, 1366, 1400, 1440, 1536, 1600, 1680, 1728, 1792, 1920, 2048];
 
       // Жёсткие ограничения
-      const MOBILE_TARGET_W   = 375;          // всегда приводим к 375
-      const DESKTOP_MAX_W     = 1260;         // кап по ширине
-      const DESKTOP_MAX_H     = 968;          // кап по высоте
+      const MOBILE_TARGET_W = 375;  // мобилка → 375 px
+      const DESKTOP_MAX_W   = 1260; // десктоп → максимум 1260 px по ширине
 
       function applyNaturalSize() {
         const W = bg.naturalWidth;
@@ -128,28 +127,26 @@
         const looksMobile   = AR > 1.5; // портрет
 
         if (looksMobile) {
-          // Мобилка: логическая ширина 375 (поддержка ретины 2×/3×)
+          // Мобилка: логическая ширина 375 (ретина 2×/3× тоже к 375)
           targetW = MOBILE_TARGET_W;
           targetH = Math.round(H * (targetW / W));
         } else if (nearDesktop1x) {
-          // Десктоп 1× — нормализуем к «красивой» и применяем капы 1440×968
+          // Десктоп 1× — нормализуем к ближайшей «красивой»
           targetW = nearest(W, DESKTOP_WIDTHS);
           targetH = Math.round(H * (targetW / W));
         } else if (nearDesktop2x) {
-          // Десктоп 2× — приводим к логической ширине и применяем капы
+          // Десктоп 2× — приводим к логической ширине (dw)
           targetW = nearDesktop2x;
           targetH = Math.round(H * (targetW / W));
         } else {
-          // Прочее: считаем десктопом, потом применим капы
+          // Прочее: считаем десктопом
           targetW = W;
           targetH = H;
         }
 
-        // Применяем кап: максимум 1440×968 для десктопа
-        if (!looksMobile) {
-          const scaleW = DESKTOP_MAX_W / targetW;
-          const scaleH = DESKTOP_MAX_H / targetH;
-          const scale  = Math.min(1, scaleW, scaleH); // только уменьшение
+        // Применяем ограничение только по ШИРИНЕ для десктопа (не увеличиваем, только уменьшаем)
+        if (!looksMobile && targetW > DESKTOP_MAX_W) {
+          const scale = DESKTOP_MAX_W / targetW;
           targetW = Math.round(targetW * scale);
           targetH = Math.round(targetH * scale);
         }
@@ -234,4 +231,3 @@
   </script>
 </body>
 </html>
-
