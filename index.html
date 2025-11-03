@@ -104,14 +104,21 @@
       function setHint(msg){ if (status) status.textContent = msg; }
 
       // Любая загрузка картинки -> после onload проставляем реальные размеры контента
-      function applyNaturalSize() {
-        // размеры контента равны натуральным размерам картинки
-        content.style.width  = bg.naturalWidth  + 'px';
-        content.style.height = bg.naturalHeight + 'px';
-        // картинка занимает весь контент пиксель-в-пиксель
+       function applyNaturalSize() {
+        // автоматически уменьшаем картинку в 2 раза (масштаб 0.5)
+        const scale = 0.5;
+        const w = bg.naturalWidth * scale;
+        const h = bg.naturalHeight * scale;
+      
+        content.style.width  = w + 'px';
+        content.style.height = h + 'px';
+      
+        // картинка растягивается на весь контент
         bg.style.width  = '100%';
         bg.style.height = '100%';
         bg.style.display = 'block';
+      
+        console.log(`🔍 Картинка ${bg.naturalWidth}×${bg.naturalHeight} → показана ${w}×${h}`);
       }
       bg.addEventListener('load', applyNaturalSize);
 
@@ -182,3 +189,4 @@
   </script>
 </body>
 </html>
+
