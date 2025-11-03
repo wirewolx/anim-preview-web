@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>Lottie — Loader + Screen Preview</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Lottie -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js" defer></script>
+  <link rel="stylesheet" href="./styles/main.css" />
+</head>
+<body>
+  <nav class="tabs" role="tablist">
+    <button class="tab-btn" id="tab-f1" aria-controls="panel-f1" aria-selected="true">Lottie Loader</button>
+    <button class="tab-btn" id="tab-f2" aria-controls="panel-f2" aria-selected="false">Screen Preview 1440×800</button>
+  </nav>
+
+  <!-- Panel 1: Lottie Loader -->
+  <section id="panel-f1" class="panel active" role="tabpanel" aria-labelledby="tab-f1">
+    <div class="controls">
+      <label class="btn" for="f1-file">Выбрать JSON</label>
+      <input id="f1-file" type="file" accept=".json,application/json" />
+
+      <select id="f1-sizeSelect">
+        <option value="120">120×120</option>
+        <option value="160">160×160</option>
+        <option value="180">180×180</option>
+        <option value="200">200×200</option>
+        <option value="220" selected>220×220</option>
+      </select>
+
+      <div class="row">
+        <input type="color" id="f1-colorPicker" value="#0f141c" />
+        <input type="text" id="f1-colorInput" value="#0f141c" maxlength="7" placeholder="#rrggbb" />
+      </div>
+
+      <label class="switch"><span>Loop</span><input type="checkbox" id="f1-loopToggle" checked /></label>
+
+      <button class="btn" id="f1-startBtn" disabled>Start</button>
+      <button class="btn" id="f1-stopBtn" disabled>Stop</button>
+    </div>
+
+    <div id="f1-stage" title="Кликните, чтобы загрузить Lottie">
+      <span class="hint">Кликните сюда или выберите JSON сверху</span>
+    </div>
+    <p class="hint" id="f1-status">Файл не загружен</p>
+  </section>
+
+  <!-- Panel 2: Screen Preview -->
+  <section id="panel-f2" class="panel" role="tabpanel" aria-labelledby="tab-f2">
+    <div class="controls">
+      <label class="btn" for="f2-imgFile">Загрузить скрин</label>
+      <input id="f2-imgFile" type="file" accept="image/png,image/jpeg,image/webp" />
+      <label class="btn" for="f2-jsonFile">Загрузить Lottie JSON</label>
+      <input id="f2-jsonFile" type="file" accept=".json,application/json" />
+
+      <button class="btn" id="f2-startBtn" disabled>Start</button>
+      <button class="btn" id="f2-stopBtn" disabled>Stop</button>
+      <label class="switch"><span>Loop</span><input type="checkbox" id="f2-loopToggle" checked /></label>
+      <span class="hint">Непрозр.:</span>
+      <input id="f2-opacityRange" type="range" min="0" max="100" value="100" />
+    </div>
+
+    <div class="stage-frame" id="f2-stage">
+      <img id="f2-bgImg" alt="Скрин" />
+      <div id="f2-animHost">
+        <div class="handle nw"></div>
+        <div class="handle ne"></div>
+        <div class="handle sw"></div>
+        <div class="handle se"></div>
+      </div>
+    </div>
+    <p class="hint" id="f2-status">Размер экрана: 1440×800. Кликните по анимации, чтобы показать ручки.</p>
+  </section>
+
+  <!-- App -->
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
