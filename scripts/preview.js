@@ -1,3 +1,21 @@
+// Сообщаем плагину: "я готов"
+(function signalReady(){
+  try { window.parent && window.parent.postMessage({ type: 'preview-ready' }, '*'); } catch(_) {}
+})();
+
+// Приём скрина из Figma
+window.addEventListener('message', (event) => {
+  const msg = event?.data;
+  if (msg?.type === 'figma-frame-png' && msg.base64) {
+    const img = document.getElementById('f2-bgImg');
+    if (img) {
+      img.src = 'data:image/png;base64,' + msg.base64;
+      img.style.display = 'block';
+    }
+    const status = document.getElementById('f2-status');
+    if (status) status.textContent = 'Скрин из Figma вставлен.';
+  }
+});
 function initPreview(sel) {
   const el = {
     imgFile:   $(sel.imgFile),
@@ -116,14 +134,4 @@ function initPreview(sel) {
   el.loop.addEventListener('change', () => { if (anim) anim.loop = el.loop.checked; });
   el.start.addEventListener('click', () => { if (anim) { anim.loop = el.loop.checked; anim.play(); el.statusEl.textContent = 'Воспроизведение'; } });
   el.stop.addEventListener('click',  () => { if (anim) { anim.stop(); anim.goToAndStop(0, true); el.statusEl.textContent = 'Остановлено'; } });
-// Приём скрина из Figma (External Mode)
-window.addEventListener('message', (event) => {
-  if (event?.data?.type === 'figma-frame-png' && event.data.base64) {
-    const img = document.getElementById('f2-bgImg');
-    img.src = 'data:image/png;base64,' + event.data.base64;
-    img.style.display = 'block';
-    const status = document.getElementById('f2-status');
-    if (status) status.textContent = 'Скрин из Figma вставлен.';
-  }
-});
 }
