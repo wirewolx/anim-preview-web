@@ -80,7 +80,7 @@
   <script src="./scripts/preview.js"></script>
   <script src="./scripts/main.js"></script>
 
-  <!-- Вставка изображения из буфера обмена по Ctrl/Cmd+V -->
+  <!-- Вставка изображения из буфера обмена по Ctrl/Cmd+V (оригинальный размер) -->
   <script>
     (function enablePasteToStage(){
       const stage  = document.getElementById('f2-stage');
@@ -93,9 +93,19 @@
 
       function setHint(msg){ if (status) status.textContent = msg; }
 
-      // Ловим paste как на самой области, так и на документе (на всякий случай)
       stage.addEventListener('paste', handlePaste);
       document.addEventListener('paste', handlePaste);
+
+      function setImage(src, fileName) {
+        bg.src = src;
+        bg.style.display = 'block';
+        // показываем оригинальный размер, но не больше контейнера
+        bg.style.width = 'auto';
+        bg.style.height = 'auto';
+        bg.removeAttribute('width');
+        bg.removeAttribute('height');
+        setHint('Скрин вставлен' + (fileName ? ': ' + fileName : ''));
+      }
 
       async function handlePaste(e){
         try {
@@ -108,9 +118,7 @@
             const file = item.getAsFile();
             if (file) {
               const url = URL.createObjectURL(file);
-              bg.src = url;
-              bg.style.display = 'block';
-              setHint('Скрин вставлен из буфера.');
+              setImage(url, file.name);
               e.preventDefault();
               return;
             }
@@ -119,9 +127,7 @@
           // 2) Data URL (data:image/...)
           const txt = cd.getData('text/plain');
           if (txt && txt.startsWith('data:image/')) {
-            bg.src = txt;
-            bg.style.display = 'block';
-            setHint('Скрин вставлен (data URL).');
+            setImage(txt);
             e.preventDefault();
             return;
           }
@@ -133,16 +139,13 @@
             wrap.innerHTML = html;
             const img = wrap.querySelector('img');
             if (img && img.src) {
-              bg.src = img.src; // может быть https:// или data:
-              bg.style.display = 'block';
-              setHint('Скрин вставлен (HTML <img>).');
+              setImage(img.src);
               e.preventDefault();
               return;
             }
           }
 
-          // Ничего не подошло — подскажем что делать
-          setHint('В буфере нет картинки. В Figma: Right click → Copy/Paste as → Copy as PNG, затем Ctrl/Cmd+V здесь.');
+          setHint('В буфере нет картинки. Скопируйте фрейм как PNG из Figma (Copy as PNG), затем Ctrl/Cmd+V здесь.');
         } catch (err) {
           console.error('Paste error:', err);
           setHint('Не удалось вставить изображение.');
