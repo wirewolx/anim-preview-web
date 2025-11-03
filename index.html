@@ -78,5 +78,64 @@
   <script src="./scripts/loader.js"></script>
   <script src="./scripts/preview.js"></script>
   <script src="./scripts/main.js"></script>
+  <script>
+  // Вставка изображения из буфера обмена по Ctrl/Cmd+V
+  (function enablePasteFromClipboard(){
+    const bg = document.getElementById('f2-bgImg');
+    const status = document.getElementById('f2-status');
+    if (!bg) return; // на всякий случай
+
+    document.addEventListener('paste', async (e) => {
+      try {
+        const cd = e.clipboardData;
+        if (!cd) return;
+
+        // 1) Если в буфере есть файл-изображение (PNG/JPEG/WebP)
+        const item = [...cd.items].find(i => i.type && i.type.startsWith('image/'));
+        if (item) {
+          const file = item.getAsFile();
+          if (file) {
+            const url = URL.createObjectURL(file);
+            bg.src = url;
+            bg.style.display = 'block';
+            if (status) status.textContent = 'Скрин вставлен из буфера.';
+            e.preventDefault();
+            return;
+          }
+        }
+
+        // 2) Если в буфере текст с data:image/...
+        const txt = cd.getData('text/plain');
+        if (txt && txt.startsWith('data:image/')) {
+          bg.src = txt;
+          bg.style.display = 'block';
+          if (status) status.textContent = 'Скрин вставлен (data URL).';
+          e.preventDefault();
+          return;
+        }
+
+        // 3) Если в буфере HTML с <img>
+        const html = cd.getData('text/html');
+        if (html) {
+          const wrap = document.createElement('div');
+          wrap.innerHTML = html;
+          const img = wrap.querySelector('img');
+          if (img && img.src) {
+            bg.src = img.src;
+            bg.style.display = 'block';
+            if (status) status.textContent = 'Скрин вставлен (HTML <img>).';
+            e.preventDefault();
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('Paste error:', err);
+        if (status) status.textContent = 'Не удалось вставить изображение.';
+      }
+    });
+  })();
+</script>
+
 </body>
 </html>
+
