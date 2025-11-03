@@ -1,21 +1,3 @@
-// Сообщаем плагину: "я готов"
-(function signalReady(){
-  try { window.parent && window.parent.postMessage({ type: 'preview-ready' }, '*'); } catch(_) {}
-})();
-
-// Приём скрина из Figma
-window.addEventListener('message', (event) => {
-  const msg = event?.data;
-  if (msg?.type === 'figma-frame-png' && msg.base64) {
-    const img = document.getElementById('f2-bgImg');
-    if (img) {
-      img.src = 'data:image/png;base64,' + msg.base64;
-      img.style.display = 'block';
-    }
-    const status = document.getElementById('f2-status');
-    if (status) status.textContent = 'Скрин из Figma вставлен.';
-  }
-});
 function initPreview(sel) {
   const el = {
     imgFile:   $(sel.imgFile),
