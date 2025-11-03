@@ -79,7 +79,7 @@
 
     <p class="hint" id="f2-status">
       Полноэкранная область с отступами 32px. Вставьте скрин (Ctrl/Cmd+V, Copy as PNG в Figma)
-      или загрузите файл — он отобразится в своём оригинальном (логическом) размере.
+      или загрузите файл — он отобразится в логическом размере.
     </p>
   </section>
 
@@ -90,11 +90,11 @@
   <script src="./scripts/preview.js"></script>
   <script src="./scripts/main.js"></script>
 
-  <!-- Вставка изображения из буфера + авто-логический масштаб -->
+  <!-- Вставка изображения из буфера + умный масштаб (мобилки/десктопы) -->
   <script>
     (function enablePasteAndSizing(){
       const stage   = document.getElementById('f2-stage');    // прокручиваемая область
-      const content = document.getElementById('f2-content');  // будет иметь размеры картинки (логические)
+      const content = document.getElementById('f2-content');  // размеры картинки (логические)
       const bg      = document.getElementById('f2-bgImg');    // изображение
       const status  = document.getElementById('f2-status');
       const imgFile = document.getElementById('f2-imgFile');
@@ -103,35 +103,58 @@
 
       function setHint(msg){ if (status) status.textContent = msg; }
 
-      // Автоматический логический масштаб под мобильные ширины (если пришёл ретиновый PNG)
+      function nearest(val, arr){
+        return arr.reduce((best,cur)=>Math.abs(cur-val)<Math.abs(best-val)?cur:best, arr[0]);
+      }
+      const NEAR = (a,b,tol)=>Math.abs(a-b)<=tol;
+
+      // Умный автоскейл для мобильных/десктопных макетов
       function applyNaturalSize() {
         const W = bg.naturalWidth;
         const H = bg.naturalHeight;
+        const AR = H / Math.max(W, 1); // аспект
 
-        // Кандидаты логических ширин (CSS px) для мобильных макетов
-        const MOBILE_WIDTHS = [320, 360, 375, 390, 393, 412, 414, 428];
+        // Мобильные логические ширины
+        const MOBILE_WIDTHS  = [320, 360, 375, 390, 393, 412, 414, 428];
+        // Типовые десктопные ширины макетов
+        const DESKTOP_WIDTHS = [1024, 1200, 1280, 1366, 1400, 1440, 1536, 1600, 1680, 1728, 1792, 1920, 2048];
 
-        // По умолчанию — без масштабирования
-        let targetW = W;
+        let targetW = W; // по умолчанию без масштабирования
 
-        // Если ширина похожа на ретину (примерно 2x/3x мобильного макета) — приводим к ближайшей логической ширине
-        if (W >= 700 && W <= 2500) {
-          const approxLogical = W / 2; // чаще всего Figma копирует ~2x
-          targetW = MOBILE_WIDTHS.reduce((best, cur) =>
-            Math.abs(cur - approxLogical) < Math.abs(best - approxLogical) ? cur : best,
-          MOBILE_WIDTHS[0]);
+        // 1) Десктоп 1× — оставить как есть, подправить к ближайшей «красивой» ширине
+        const nearDesktop1x = DESKTOP_WIDTHS.find(dw => NEAR(W, dw, 60));
+        if (nearDesktop1x) {
+          targetW = nearest(W, DESKTOP_WIDTHS);
+        } else {
+          // 2) Десктоп 2× — привести к логической ширине (dw)
+          const nearDesktop2x = DESKTOP_WIDTHS.find(dw => NEAR(W, dw * 2, 120));
+          if (nearDesktop2x) {
+            targetW = nearDesktop2x;
+          } else {
+            // 3) Мобильные портреты (ретина 2×/3×)
+            const looksMobile = AR > 1.5; // простой признак портретного фрейма
+            if (looksMobile && W >= 700 && W <= 2500) {
+              // чаще всего 2× от логической
+              const approxLogical = W / 2;
+              targetW = nearest(approxLogical, MOBILE_WIDTHS);
+            } else if (looksMobile && (W >= 1100 && W <= 3800)) {
+              // возможный 3× экспорт
+              const approxLogical3x = W / 3;
+              targetW = nearest(approxLogical3x, MOBILE_WIDTHS);
+            }
+          }
         }
 
-        // Масштаб и итоговые размеры
+        // Применяем масштаб
         const scale = targetW / W;
-        const w = Math.round(W * scale);
-        const h = Math.round(H * scale);
+        const w = Math.max(1, Math.round(W * scale));
+        const h = Math.max(1, Math.round(H * scale));
 
-        // Контент ровно в рассчитанном логическом размере
+        // Контент — в рассчитанном размере
         content.style.width  = w + 'px';
         content.style.height = h + 'px';
 
-        // Картинка заполняет контент без искажений
+        // Картинка заполняет контент
         bg.style.width  = '100%';
         bg.style.height = '100%';
         bg.style.display = 'block';
@@ -155,7 +178,7 @@
       document.addEventListener('paste', handlePaste);
 
       function setImage(src, fileName) {
-        bg.src = src; // onload сам вызовет applyNaturalSize()
+        bg.src = src; // onload вызовет applyNaturalSize()
         setHint('Скрин вставлен' + (fileName ? ': ' + fileName : ''));
       }
 
