@@ -60,7 +60,8 @@
       <input id="f2-opacityRange" type="range" min="0" max="100" value="100" />
     </div>
 
-    <div class="stage-frame" id="f2-stage">
+    <!-- contenteditable + tabindex, чтобы ловить Ctrl/Cmd+V -->
+    <div class="stage-frame" id="f2-stage" contenteditable="true" tabindex="0" aria-label="Screen Preview area">
       <img id="f2-bgImg" alt="Скрин" />
       <div id="f2-animHost">
         <div class="handle nw"></div>
@@ -69,7 +70,7 @@
         <div class="handle se"></div>
       </div>
     </div>
-    <p class="hint" id="f2-status">Размер экрана: 1440×800. Кликните по анимации, чтобы показать ручки.</p>
+    <p class="hint" id="f2-status">Размер экрана: 1440×800. Кликните по области, затем вставьте скрин (Ctrl/Cmd+V). В Figma используйте Copy as PNG.</p>
   </section>
 
   <!-- Скрипты (обычные теги, без модулей) -->
@@ -78,64 +79,76 @@
   <script src="./scripts/loader.js"></script>
   <script src="./scripts/preview.js"></script>
   <script src="./scripts/main.js"></script>
+
+  <!-- Вставка изображения из буфера обмена по Ctrl/Cmd+V -->
   <script>
-  // Вставка изображения из буфера обмена по Ctrl/Cmd+V
-  (function enablePasteFromClipboard(){
-    const bg = document.getElementById('f2-bgImg');
-    const status = document.getElementById('f2-status');
-    if (!bg) return; // на всякий случай
+    (function enablePasteToStage(){
+      const stage  = document.getElementById('f2-stage');
+      const bg     = document.getElementById('f2-bgImg');
+      const status = document.getElementById('f2-status');
+      if (!stage || !bg) return;
 
-    document.addEventListener('paste', async (e) => {
-      try {
-        const cd = e.clipboardData;
-        if (!cd) return;
+      // Фокус при клике — чтобы Ctrl/Cmd+V пришёл в нужную область
+      stage.addEventListener('click', () => { stage.focus(); });
 
-        // 1) Если в буфере есть файл-изображение (PNG/JPEG/WebP)
-        const item = [...cd.items].find(i => i.type && i.type.startsWith('image/'));
-        if (item) {
-          const file = item.getAsFile();
-          if (file) {
-            const url = URL.createObjectURL(file);
-            bg.src = url;
+      function setHint(msg){ if (status) status.textContent = msg; }
+
+      // Ловим paste как на самой области, так и на документе (на всякий случай)
+      stage.addEventListener('paste', handlePaste);
+      document.addEventListener('paste', handlePaste);
+
+      async function handlePaste(e){
+        try {
+          const cd = e.clipboardData;
+          if (!cd) return;
+
+          // 1) Файл-изображение (PNG/JPEG/WebP)
+          const item = [...cd.items].find(i => i.type && i.type.startsWith('image/'));
+          if (item) {
+            const file = item.getAsFile();
+            if (file) {
+              const url = URL.createObjectURL(file);
+              bg.src = url;
+              bg.style.display = 'block';
+              setHint('Скрин вставлен из буфера.');
+              e.preventDefault();
+              return;
+            }
+          }
+
+          // 2) Data URL (data:image/...)
+          const txt = cd.getData('text/plain');
+          if (txt && txt.startsWith('data:image/')) {
+            bg.src = txt;
             bg.style.display = 'block';
-            if (status) status.textContent = 'Скрин вставлен из буфера.';
+            setHint('Скрин вставлен (data URL).');
             e.preventDefault();
             return;
           }
-        }
 
-        // 2) Если в буфере текст с data:image/...
-        const txt = cd.getData('text/plain');
-        if (txt && txt.startsWith('data:image/')) {
-          bg.src = txt;
-          bg.style.display = 'block';
-          if (status) status.textContent = 'Скрин вставлен (data URL).';
-          e.preventDefault();
-          return;
-        }
-
-        // 3) Если в буфере HTML с <img>
-        const html = cd.getData('text/html');
-        if (html) {
-          const wrap = document.createElement('div');
-          wrap.innerHTML = html;
-          const img = wrap.querySelector('img');
-          if (img && img.src) {
-            bg.src = img.src;
-            bg.style.display = 'block';
-            if (status) status.textContent = 'Скрин вставлен (HTML <img>).';
-            e.preventDefault();
-            return;
+          // 3) HTML с <img src="...">
+          const html = cd.getData('text/html');
+          if (html) {
+            const wrap = document.createElement('div');
+            wrap.innerHTML = html;
+            const img = wrap.querySelector('img');
+            if (img && img.src) {
+              bg.src = img.src; // может быть https:// или data:
+              bg.style.display = 'block';
+              setHint('Скрин вставлен (HTML <img>).');
+              e.preventDefault();
+              return;
+            }
           }
+
+          // Ничего не подошло — подскажем что делать
+          setHint('В буфере нет картинки. В Figma: Right click → Copy/Paste as → Copy as PNG, затем Ctrl/Cmd+V здесь.');
+        } catch (err) {
+          console.error('Paste error:', err);
+          setHint('Не удалось вставить изображение.');
         }
-      } catch (err) {
-        console.error('Paste error:', err);
-        if (status) status.textContent = 'Не удалось вставить изображение.';
       }
-    });
-  })();
-</script>
-
+    })();
+  </script>
 </body>
 </html>
-
