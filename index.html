@@ -7,11 +7,92 @@
   <link rel="stylesheet" href="./styles/main.css" />
   <!-- Lottie глобально -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
+  <style>
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; color-scheme: dark; }
+    body { margin: 0; background:#0b0f14; color:#e8eef5; }
+    /* Tabs */
+    .tabs { display:flex; gap:8px; padding:12px 16px; border-bottom:1px solid #223044; background:#0e1420; position:sticky; top:0; z-index:20; }
+    .tab-btn { padding:10px 14px; border-radius:8px; border:1px solid #2a3b55; background:#172335; color:#e8eef5; cursor:pointer; }
+    .tab-btn[aria-selected="true"] { background:#1f2c43; border-color:#3b5175; }
+    .panel { display:none; padding:20px; }
+    .panel.active { display:block; }
+
+    /* Controls */
+    .controls { margin-bottom:16px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:center; }
+    input[type="file"] { display:none; }
+    .btn, select, input[type="text"], input[type="color"], input[type="range"], label.switch {
+      border:1px solid #2a3b55; background:#172335; color:#e8eef5; border-radius:8px; padding:8px 10px; font-size:14px;
+    }
+    .btn { cursor:pointer; }
+    .hint { font-size:13px; color:#9fb0c7; text-align:center; }
+    .row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    /* Switch */
+    .switch { display:inline-flex; align-items:center; gap:8px; padding:6px 8px; background:#101725; border:1px solid #2a3b55; border-radius:8px; }
+    .switch input { appearance:none; width:40px; height:22px; background:#213048; border-radius:999px; position:relative; outline:none; cursor:pointer; }
+    .switch input:checked { background:#3a6cf0; }
+    .switch input::after { content:""; position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:50%; background:#e8eef5; transition:left .2s; }
+    .switch input:checked::after { left:21px; }
+
+    /* Feature 1: Loader (как было) */
+    #f1-stage {
+      padding:64px; display:flex; align-items:center; justify-content:center;
+      background:#0f141c; border:1px dashed #2a3b55; border-radius:12px; overflow:hidden;
+      box-sizing:content-box; transition: width .2s, height .2s, background .2s;
+      margin:0 auto; cursor:pointer;
+    }
+    #f1-stage:hover { border-color:#3a6cf0; }
+
+    /* ===== Feature 2: Screen Preview — ВСЕГДА 32px отступы и без скроллов ===== */
+    .viewport-wrap {
+      height: calc(100vh - 20px - 20px); /* минус вертикальные паддинги секции (по 20px) */
+      box-sizing: border-box;
+    }
+    .stage-frame {
+      /* занимаем всю высоту viewport-wrap */
+      height: 100%;
+      width: 100%;
+      margin: 0 auto;
+      background: #0f141c;
+      border: 1px solid #223044;
+      border-radius: 12px;
+      /* ключевое: внутренние ОТСТУПЫ 32 px и ЦЕНТРИРОВАНИЕ */
+      padding: 32px;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden; /* НИКАКИХ скроллов внутри */
+    }
+    /* Контент — это рамка под картинку + оверлей Lottie.
+       Размеры задаём из JS после расчёта масштаба. */
+    .stage-content {
+      position: relative;
+      width: 0;  /* выставит JS */
+      height: 0; /* выставит JS */
+    }
+    #f2-bgImg {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      display: none; /* станет block после загрузки */
+      user-select: none; pointer-events: none;
+    }
+    #f2-animHost {
+      position: absolute; left: 20px; top: 20px; width: 220px; height: 220px; display:none;
+      outline: 1.5px dashed rgba(255,255,255,.35); border-radius: 2px; z-index: 2;
+    }
+    .handle {
+      position: absolute; width: 12px; height: 12px; background: #e8eef5; border-radius: 2px; border: 1px solid #1a273a; z-index: 4; display: none;
+    }
+    .handle.nw { left:-7px; top:-7px; cursor:nwse-resize; }
+    .handle.ne { right:-7px; top:-7px; cursor:nesw-resize; }
+    .handle.sw { left:-7px; bottom:-7px; cursor:nesw-resize; }
+    .handle.se { right:-7px; bottom:-7px; cursor:nwse-resize; }
+  </style>
 </head>
 <body>
   <nav class="tabs" role="tablist">
     <button class="tab-btn" id="tab-f1" aria-selected="true">Lottie Loader</button>
-    <button class="tab-btn" id="tab-f2" aria-selected="false">Screen Preview (fullscreen)</button>
+    <button class="tab-btn" id="tab-f2" aria-selected="false">Screen Preview (fit, 32px paddings)</button>
   </nav>
 
   <!-- Panel 1 -->
@@ -60,11 +141,9 @@
       <input id="f2-opacityRange" type="range" min="0" max="100" value="100" />
     </div>
 
-    <!-- Полноэкранная область с отступами 32px -->
     <div class="viewport-wrap">
-      <!-- Прокручиваемая рамка -->
+      <!-- Центрируем и даём паддинги 32px внутри -->
       <div class="stage-frame" id="f2-stage" tabindex="0" aria-label="Screen Preview area">
-        <!-- Контент равен размеру вставленного изображения -->
         <div class="stage-content" id="f2-content">
           <img id="f2-bgImg" alt="Скрин" />
           <div id="f2-animHost">
@@ -78,8 +157,8 @@
     </div>
 
     <p class="hint" id="f2-status">
-      Полноэкранная область с отступами 32px. Вставьте скрин (Ctrl/Cmd+V, Copy as PNG в Figma)
-      или загрузите файл — мобилка → 375 px, десктоп → максимум 1260 px по ширине.
+      Вставьте скрин (Ctrl/Cmd+V, Copy as PNG в Figma) или загрузите файл — он автоматически впишется по меньшей стороне,
+      останется по центру, с внутренними отступами 32px и без скроллов.
     </p>
   </section>
 
@@ -90,79 +169,43 @@
   <script src="./scripts/preview.js"></script>
   <script src="./scripts/main.js"></script>
 
-  <!-- Вставка изображения из буфера + лимиты: mobile 375 / desktop ≤1260 -->
+  <!-- Простая логика: fit-to-viewport-with-32px-padding, без эвристик -->
   <script>
-    (function enablePasteAndSizing(){
-      const stage   = document.getElementById('f2-stage');    // прокручиваемая область
-      const content = document.getElementById('f2-content');  // размеры картинки (логические)
-      const bg      = document.getElementById('f2-bgImg');    // изображение
+    (function enablePasteAndFit(){
+      const stage   = document.getElementById('f2-stage');    // рамка с паддингами 32px
+      const content = document.getElementById('f2-content');  // размеры задаём после fit
+      const bg      = document.getElementById('f2-bgImg');    // картинка
       const status  = document.getElementById('f2-status');
       const imgFile = document.getElementById('f2-imgFile');
 
       if (!stage || !content || !bg) return;
 
       function setHint(msg){ if (status) status.textContent = msg; }
-      const NEAR = (a,b,tol)=>Math.abs(a-b)<=tol;
-      const nearest = (val, arr)=>arr.reduce((best,cur)=>Math.abs(cur-val)<Math.abs(best-val)?cur:best, arr[0]);
 
-      // типовые ширины
-      const MOBILE_WIDTHS  = [320, 360, 375, 390, 393, 412, 414, 428];
-      const DESKTOP_WIDTHS = [1024, 1200, 1280, 1366, 1400, 1440, 1536, 1600, 1680, 1728, 1792, 1920, 2048];
+      function fitAndCenter() {
+        const W = bg.naturalWidth  || 1;
+        const H = bg.naturalHeight || 1;
 
-      // Жёсткие ограничения
-      const MOBILE_TARGET_W = 375;  // мобилка → 375 px
-      const DESKTOP_MAX_W   = 1260; // десктоп → максимум 1260 px по ширине
+        // доступная область = внутренняя часть stage за вычетом паддингов (они уже учтены, т.к. padding:32px внутри stage)
+        const availW = stage.clientWidth  - 64; // 32 слева + 32 справа
+        const availH = stage.clientHeight - 64; // 32 сверху + 32 снизу
 
-      function applyNaturalSize() {
-        const W = bg.naturalWidth;
-        const H = bg.naturalHeight;
-        const AR = H / Math.max(W, 1);
+        // масштаб только вниз (не увеличиваем мелкие макеты), чтобы не расплывались
+        const scale = Math.min(availW / W, availH / H, 1);
 
-        // Определяем сценарий
-        let targetW = W;
-        let targetH = H;
+        const w = Math.floor(W * scale);
+        const h = Math.floor(H * scale);
 
-        const nearDesktop1x = DESKTOP_WIDTHS.find(dw => NEAR(W, dw, 60));
-        const nearDesktop2x = DESKTOP_WIDTHS.find(dw => NEAR(W, dw * 2, 140));
-        const looksMobile   = AR > 1.5; // портрет
-
-        if (looksMobile) {
-          // Мобилка: логическая ширина 375 (ретина 2×/3× тоже к 375)
-          targetW = MOBILE_TARGET_W;
-          targetH = Math.round(H * (targetW / W));
-        } else if (nearDesktop1x) {
-          // Десктоп 1× — нормализуем к ближайшей «красивой»
-          targetW = nearest(W, DESKTOP_WIDTHS);
-          targetH = Math.round(H * (targetW / W));
-        } else if (nearDesktop2x) {
-          // Десктоп 2× — приводим к логической ширине (dw)
-          targetW = nearDesktop2x;
-          targetH = Math.round(H * (targetW / W));
-        } else {
-          // Прочее: считаем десктопом
-          targetW = W;
-          targetH = H;
-        }
-
-        // Применяем ограничение только по ШИРИНЕ для десктопа (не увеличиваем, только уменьшаем)
-        if (!looksMobile && targetW > DESKTOP_MAX_W) {
-          const scale = DESKTOP_MAX_W / targetW;
-          targetW = Math.round(targetW * scale);
-          targetH = Math.round(targetH * scale);
-        }
-
-        // Итоговые размеры для контейнера
-        content.style.width  = targetW + 'px';
-        content.style.height = targetH + 'px';
-
-        // Картинка заполняет контент
-        bg.style.width  = '100%';
-        bg.style.height = '100%';
+        content.style.width  = w + 'px';
+        content.style.height = h + 'px';
         bg.style.display = 'block';
-
-        console.log(`📐 natural ${W}×${H} → final ${targetW}×${targetH}`);
       }
-      bg.addEventListener('load', applyNaturalSize);
+
+      // пересчитываем на ресайз окна (если пользователь меняет высоту/ширину)
+      window.addEventListener('resize', () => { if (bg.src) fitAndCenter(); });
+
+      // при загрузке изображения — fit
+      bg.addEventListener('load', fitAndCenter);
 
       // Загрузка через кнопку
       if (imgFile) {
@@ -179,7 +222,7 @@
       document.addEventListener('paste', handlePaste);
 
       function setImage(src, fileName) {
-        bg.src = src; // onload вызовет applyNaturalSize()
+        bg.src = src; // onload запустит fitAndCenter()
         setHint('Скрин вставлен' + (fileName ? ': ' + fileName : ''));
       }
 
