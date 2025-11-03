@@ -97,13 +97,15 @@
       document.addEventListener('paste', handlePaste);
 
       function setImage(src, fileName) {
+       bg.onload = () => {
+    // когда картинка загрузилась, подгоняем контейнер
+        stage.style.width = bg.naturalWidth + 'px';
+        stage.style.height = bg.naturalHeight + 'px';
+        };
         bg.src = src;
         bg.style.display = 'block';
-        // показываем оригинальный размер, но не больше контейнера
         bg.style.width = 'auto';
         bg.style.height = 'auto';
-        bg.removeAttribute('width');
-        bg.removeAttribute('height');
         setHint('Скрин вставлен' + (fileName ? ': ' + fileName : ''));
       }
 
@@ -155,3 +157,4 @@
   </script>
 </body>
 </html>
+
