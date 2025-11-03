@@ -11,7 +11,7 @@
 <body>
   <nav class="tabs" role="tablist">
     <button class="tab-btn" id="tab-f1" aria-selected="true">Lottie Loader</button>
-    <button class="tab-btn" id="tab-f2" aria-selected="false">Screen Preview 1440×800</button>
+    <button class="tab-btn" id="tab-f2" aria-selected="false">Screen Preview (fullscreen)</button>
   </nav>
 
   <!-- Panel 1 -->
@@ -60,17 +60,27 @@
       <input id="f2-opacityRange" type="range" min="0" max="100" value="100" />
     </div>
 
-    <!-- contenteditable + tabindex, чтобы ловить Ctrl/Cmd+V -->
-    <div class="stage-frame" id="f2-stage" contenteditable="true" tabindex="0" aria-label="Screen Preview area">
-      <img id="f2-bgImg" alt="Скрин" />
-      <div id="f2-animHost">
-        <div class="handle nw"></div>
-        <div class="handle ne"></div>
-        <div class="handle sw"></div>
-        <div class="handle se"></div>
+    <!-- Полноэкранная область с отступами 32px -->
+    <div class="viewport-wrap">
+      <!-- Прокручиваемая рамка -->
+      <div class="stage-frame" id="f2-stage" tabindex="0" aria-label="Screen Preview area">
+        <!-- Контент равен размеру вставленного изображения -->
+        <div class="stage-content" id="f2-content">
+          <img id="f2-bgImg" alt="Скрин" />
+          <div id="f2-animHost">
+            <div class="handle nw"></div>
+            <div class="handle ne"></div>
+            <div class="handle sw"></div>
+            <div class="handle se"></div>
+          </div>
+        </div>
       </div>
     </div>
-    <p class="hint" id="f2-status">Размер экрана: 1440×800. Кликните по области, затем вставьте скрин (Ctrl/Cmd+V). В Figma используйте Copy as PNG.</p>
+
+    <p class="hint" id="f2-status">
+      Полноэкранная область с отступами 32px. Вставьте скрин (Ctrl/Cmd+V, Copy as PNG в Figma)
+      или загрузите файл — он отобразится в своём оригинальном размере.
+    </p>
   </section>
 
   <!-- Скрипты (обычные теги, без модулей) -->
@@ -80,32 +90,47 @@
   <script src="./scripts/preview.js"></script>
   <script src="./scripts/main.js"></script>
 
-  <!-- Вставка изображения из буфера обмена по Ctrl/Cmd+V (оригинальный размер) -->
+  <!-- Вставка изображения из буфера + установка реальных размеров контента -->
   <script>
-    (function enablePasteToStage(){
-      const stage  = document.getElementById('f2-stage');
-      const bg     = document.getElementById('f2-bgImg');
-      const status = document.getElementById('f2-status');
-      if (!stage || !bg) return;
+    (function enablePasteAndSizing(){
+      const stage   = document.getElementById('f2-stage');    // прокручиваемая область
+      const content = document.getElementById('f2-content');  // будет иметь размеры картинки
+      const bg      = document.getElementById('f2-bgImg');    // изображение
+      const status  = document.getElementById('f2-status');
+      const imgFile = document.getElementById('f2-imgFile');
 
-      // Фокус при клике — чтобы Ctrl/Cmd+V пришёл в нужную область
-      stage.addEventListener('click', () => { stage.focus(); });
+      if (!stage || !content || !bg) return;
 
       function setHint(msg){ if (status) status.textContent = msg; }
 
+      // Любая загрузка картинки -> после onload проставляем реальные размеры контента
+      function applyNaturalSize() {
+        // размеры контента равны натуральным размерам картинки
+        content.style.width  = bg.naturalWidth  + 'px';
+        content.style.height = bg.naturalHeight + 'px';
+        // картинка занимает весь контент пиксель-в-пиксель
+        bg.style.width  = '100%';
+        bg.style.height = '100%';
+        bg.style.display = 'block';
+      }
+      bg.addEventListener('load', applyNaturalSize);
+
+      // Загрузка через кнопку
+      if (imgFile) {
+        imgFile.addEventListener('change', (e) => {
+          const f = e.target.files?.[0]; if (!f) return;
+          bg.src = URL.createObjectURL(f);
+          setHint('Скрин загружен: ' + (f.name || 'файл'));
+        });
+      }
+
+      // Вставка из буфера
+      stage.addEventListener('click', () => stage.focus());
       stage.addEventListener('paste', handlePaste);
       document.addEventListener('paste', handlePaste);
 
       function setImage(src, fileName) {
-       bg.onload = () => {
-    // когда картинка загрузилась, подгоняем контейнер
-        stage.style.width = bg.naturalWidth + 'px';
-        stage.style.height = bg.naturalHeight + 'px';
-        };
-        bg.src = src;
-        bg.style.display = 'block';
-        bg.style.width = 'auto';
-        bg.style.height = 'auto';
+        bg.src = src; // onload сам вызовет applyNaturalSize()
         setHint('Скрин вставлен' + (fileName ? ': ' + fileName : ''));
       }
 
@@ -114,7 +139,7 @@
           const cd = e.clipboardData;
           if (!cd) return;
 
-          // 1) Файл-изображение (PNG/JPEG/WebP)
+          // 1) Файл-изображение
           const item = [...cd.items].find(i => i.type && i.type.startsWith('image/'));
           if (item) {
             const file = item.getAsFile();
@@ -126,7 +151,7 @@
             }
           }
 
-          // 2) Data URL (data:image/...)
+          // 2) Data URL
           const txt = cd.getData('text/plain');
           if (txt && txt.startsWith('data:image/')) {
             setImage(txt);
@@ -134,7 +159,7 @@
             return;
           }
 
-          // 3) HTML с <img src="...">
+          // 3) HTML <img>
           const html = cd.getData('text/html');
           if (html) {
             const wrap = document.createElement('div');
@@ -147,7 +172,7 @@
             }
           }
 
-          setHint('В буфере нет картинки. Скопируйте фрейм как PNG из Figma (Copy as PNG), затем Ctrl/Cmd+V здесь.');
+          setHint('В буфере нет картинки. В Figma: Copy as PNG → Ctrl/Cmd+V здесь.');
         } catch (err) {
           console.error('Paste error:', err);
           setHint('Не удалось вставить изображение.');
@@ -157,4 +182,3 @@
   </script>
 </body>
 </html>
-
