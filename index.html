@@ -6,91 +6,55 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
   <style>
-    :root {
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      color-scheme: dark;
-    }
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; color-scheme: dark; }
     body {
-      margin: 0;
-      background:#0b0f14;
-      color:#e8eef5;
-      display:flex;
-      flex-direction:column;
-      align-items:center;
-      justify-content:flex-start;
-      min-height:100vh;
+      margin: 0; background:#0b0f14; color:#e8eef5;
+      display:flex; flex-direction:column; align-items:center; min-height:100vh;
     }
     .header { width:100%; padding:12px 16px; border-bottom:1px solid #223044; background:#0e1420; }
     .title { font-weight:600; text-align:center; }
     .panel { width:100%; padding:20px; box-sizing:border-box; display:flex; flex-direction:column; align-items:center; }
-
-    .controls {
-      margin-bottom:16px; display:flex; gap:10px; flex-wrap:wrap;
-      align-items:center; justify-content:center;
-    }
+    .controls { margin-bottom:16px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:center; }
     input[type="file"] { display:none; }
     .btn, select, input[type="text"], input[type="color"], input[type="range"], label.switch {
-      border:1px solid #2a3b55; background:#172335; color:#e8eef5;
-      border-radius:8px; padding:8px 10px; font-size:14px;
+      border:1px solid #2a3b55; background:#172335; color:#e8eef5; border-radius:8px; padding:8px 10px; font-size:14px;
     }
     .btn { cursor:pointer; }
     .hint { font-size:13px; color:#9fb0c7; text-align:center; }
     .row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-    .switch {
-      display:inline-flex; align-items:center; gap:8px; padding:6px 8px;
-      background:#101725; border:1px solid #2a3b55; border-radius:8px;
-    }
-    .switch input {
-      appearance:none; width:40px; height:22px; background:#213048;
-      border-radius:999px; position:relative; outline:none; cursor:pointer;
-    }
+    .switch { display:inline-flex; align-items:center; gap:8px; padding:6px 8px; background:#101725; border:1px solid #2a3b55; border-radius:8px; }
+    .switch input { appearance:none; width:40px; height:22px; background:#213048; border-radius:999px; position:relative; outline:none; cursor:pointer; }
     .switch input:checked { background:#3a6cf0; }
-    .switch input::after {
-      content:""; position:absolute; top:3px; left:3px;
-      width:16px; height:16px; border-radius:50%; background:#e8eef5;
-      transition:left .2s;
-    }
+    .switch input::after { content:""; position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:50%; background:#e8eef5; transition:left .2s; }
     .switch input:checked::after { left:21px; }
 
-    /* Stage container */
+    /* Stage */
     #f1-stage {
       position: relative;
-      background:#0f141c;
-      border:1px dashed #2a3b55;
-      border-radius:12px;
-      overflow:hidden;
-      transition:background .2s, border-color .2s;
-      margin:0 auto;
-      cursor:pointer;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      box-sizing:border-box;
-      padding:32px; /* отступы внутри */
-      width:100%;
-      max-width:1440px;
-      aspect-ratio:16/9;
+      background:#0f141c; border:1px dashed #2a3b55; border-radius:12px; overflow:hidden;
+      margin:0 auto; cursor:pointer; display:flex; align-items:center; justify-content:center;
+      box-sizing:border-box; padding:32px; /* внутренние 32px */
+      width:100%; max-width:1440px; aspect-ratio:16/9;
     }
-    @media (max-width:768px) {
-      #f1-stage { max-width:375px; aspect-ratio:9/16; }
-    }
+    @media (max-width:768px) { #f1-stage { max-width:375px; aspect-ratio:9/16; } }
     #f1-stage:hover { border-color:#3a6cf0; }
 
-    /* фоновая картинка */
+    /* Фон под Lottie — фикс: только inset и явный z-index */
     #bgImg {
       position:absolute;
-      inset:32px; /* отступы внутри контейнера */
-      width:calc(100% - 64px);
-      height:calc(100% - 64px);
+      inset:32px;                 /* 32px отступы со всех сторон */
       object-fit:contain;
       opacity:1;
       pointer-events:none;
       user-select:none;
       border-radius:8px;
+      z-index:0;                  /* ниже Lottie */
+      display:none;               /* включим, когда загрузится */
     }
 
+    /* Lottie (svg) выше фона */
     #f1-stage svg { position:relative; z-index:1; }
-    #f1-stage-hint { z-index:2; }
+    #f1-stage-hint { position:relative; z-index:2; }
   </style>
 </head>
 <body>
@@ -124,7 +88,7 @@
     </div>
 
     <div id="f1-stage" title="Кликните, чтобы загрузить Lottie" tabindex="0">
-      <img id="bgImg" alt="" />
+      <img id="bgImg" alt="Фоновое изображение" />
       <span id="f1-stage-hint" class="hint">Кликните сюда или выберите JSON сверху</span>
     </div>
     <p class="hint" id="f1-status">Файл не загружен</p>
@@ -156,4 +120,61 @@
 
       colorPick.addEventListener('input',()=>setBgColor(colorPick.value));
       colorInput.addEventListener('input',()=>{const v=colorInput.value.trim(); if(validHex(v)) setBgColor(v);});
-      loopT
+      loopToggle.addEventListener('change',()=>{if(anim) anim.loop=loopToggle.checked;});
+
+      stage.addEventListener('click',()=>fileInput.click());
+      fileInput.addEventListener('change',async e=>{
+        const f=e.target.files?.[0]; if(!f) return;
+        try{
+          const txt=await f.text(); jsonData=JSON.parse(txt);
+          loadAnimation(); setStatus('Загружен: '+(f.name||'Lottie JSON'));
+        }catch(err){console.error(err); setStatus('Ошибка чтения JSON');}
+      });
+
+      startBtn.addEventListener('click',()=>{if(anim) anim.play();});
+      stopBtn .addEventListener('click',()=>{if(anim) anim.stop();});
+
+      // === Фон ===
+      bgFileInput.addEventListener('change',e=>{
+        const f=e.target.files?.[0]; if(!f) return;
+        const url=URL.createObjectURL(f);
+        // показываем после загрузки, чтобы избежать мигания
+        bgImg.onload = () => {
+          bgImg.style.display = 'block';
+          setStatus('Фон: '+(f.name||'изображение'));
+          // можно освободить URL, когда больше не нужен
+          // URL.revokeObjectURL(url); // раскомментируй, если не будешь менять прозрачность/повторно использовать
+        };
+        bgImg.src = url;
+      });
+
+      bgOpacity.addEventListener('input',()=>{ bgImg.style.opacity=(+bgOpacity.value/100); });
+      bgClearBtn.addEventListener('click',()=>{
+        bgImg.removeAttribute('src'); bgImg.style.display='none'; setStatus('Фон очищен');
+      });
+
+      function destroyAnim(){ if(anim){anim.destroy(); anim=null;} if(stageHint) stageHint.style.display='none'; }
+
+      function loadAnimation(){
+        if(!jsonData) return;
+        destroyAnim();
+        anim=lottie.loadAnimation({
+          container:stage,
+          renderer:'svg',
+          loop:loopToggle.checked,
+          autoplay:true,
+          animationData:jsonData,
+          rendererSettings:{ preserveAspectRatio:'xMidYMid meet' }
+        });
+        anim.addEventListener('DOMLoaded',()=>{ enableControls(true); });
+        anim.addEventListener('data_failed',()=>{ setStatus('Ошибка: не удалось загрузить анимацию'); enableControls(false); });
+      }
+
+      // init
+      setBgColor(colorPick.value);
+      bgImg.style.display='none';
+      enableControls(false);
+    })();
+  </script>
+</body>
+</html>
