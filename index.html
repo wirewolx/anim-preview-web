@@ -9,6 +9,7 @@
   <style>
     :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; color-scheme: dark; }
     body { margin: 0; background:#0b0f14; color:#e8eef5; }
+
     /* Tabs */
     .tabs { display:flex; gap:8px; padding:12px 16px; border-bottom:1px solid #223044; background:#0e1420; position:sticky; top:0; z-index:20; }
     .tab-btn { padding:10px 14px; border-radius:8px; border:1px solid #2a3b55; background:#172335; color:#e8eef5; cursor:pointer; }
@@ -46,7 +47,7 @@
       background: #0f141c; border: 1px solid #223044; border-radius: 12px;
       padding: 32px; box-sizing: border-box;
       display: flex; align-items: center; justify-content: center;
-      overflow: hidden;
+      overflow: hidden; /* без скролла */
     }
     .stage-content { position: relative; width: 0; height: 0; }
     #f2-bgImg {
@@ -55,11 +56,18 @@
       display: none;
       user-select: none; pointer-events: none;
     }
+
+    /* Lottie host — фикс перетаскивания */
     #f2-animHost {
       position: absolute; left: 20px; top: 20px; width: 220px; height: 220px;
       outline: 1.5px dashed rgba(255,255,255,.35);
-      border-radius: 2px; z-index: 2; cursor: move;
+      border-radius: 2px; z-index: 2;
+      cursor: grab;
+      user-select: none;
+      -webkit-user-drag: none;
+      touch-action: none; /* важно для pointerevents на таче */
     }
+    #f2-animHost.dragging { cursor: grabbing; }
   </style>
 </head>
 <body>
@@ -113,28 +121,29 @@
     </div>
 
     <p class="hint" id="f2-status">
-      Вставьте скрин (Ctrl/Cmd+V) или загрузите файл — он центрируется с 32px отступами, без скролла.  
-      Lottie-блок можно перетаскивать мышкой.
+      Вставьте скрин (Ctrl/Cmd+V) или загрузите файл — он центрируется с 32px отступами, без скролла.
+      Lottie-блок можно перетаскивать мышкой/тачем.
     </p>
   </section>
 
   <script>
     (function enablePasteAndFit(){
-      const stage   = document.getElementById('f2-stage');
-      const content = document.getElementById('f2-content');
-      const bg      = document.getElementById('f2-bgImg');
-      const status  = document.getElementById('f2-status');
-      const imgFile = document.getElementById('f2-imgFile');
-      const animHost = document.getElementById('f2-animHost');
+      const stage     = document.getElementById('f2-stage');
+      const content   = document.getElementById('f2-content');
+      const bg        = document.getElementById('f2-bgImg');
+      const status    = document.getElementById('f2-status');
+      const imgFile   = document.getElementById('f2-imgFile');
+      const animHost  = document.getElementById('f2-animHost');
 
       if (!stage || !content || !bg || !animHost) return;
       function setHint(msg){ if (status) status.textContent = msg; }
 
+      /* Fit image into area (center, 32px paddings, no scroll) */
       function fitAndCenter() {
         const W = bg.naturalWidth  || 1;
         const H = bg.naturalHeight || 1;
-        const availW = stage.clientWidth  - 64;
-        const availH = stage.clientHeight - 64;
+        const availW = stage.clientWidth  - 64; // 32+32
+        const availH = stage.clientHeight - 64; // 32+32
         const scale = Math.min(availW / W, availH / H, 1);
         const w = Math.floor(W * scale);
         const h = Math.floor(H * scale);
@@ -177,9 +186,7 @@
             }
           }
           const txt = cd.getData('text/plain');
-          if (txt && txt.startsWith('data:image/')) {
-            setImage(txt); e.preventDefault(); return;
-          }
+          if (txt && txt.startsWith('data:image/')) { setImage(txt); e.preventDefault(); return; }
           const html = cd.getData('text/html');
           if (html) {
             const wrap = document.createElement('div');
@@ -191,28 +198,63 @@
         } catch (err) { console.error('Paste error:', err); setHint('Не удалось вставить изображение.'); }
       }
 
-      // --- простое перетаскивание Lottie-блока ---
-      let isDragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
-      animHost.addEventListener('mousedown', (e) => {
+      /* ---- Smooth drag for Lottie host (no jumps) ---- */
+      const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+      let dragging = false, grabX = 0, grabY = 0, hostW = 0, hostH = 0;
+
+      animHost.addEventListener('pointerdown', (e) => {
         e.preventDefault();
-        isDragging = true;
-        startX = e.clientX;
-        startY = e.clientY;
-        const rect = animHost.getBoundingClientRect();
+        animHost.setPointerCapture(e.pointerId);
+        dragging = true;
+        animHost.classList.add('dragging');
+
+        const hostRect   = animHost.getBoundingClientRect();
         const parentRect = content.getBoundingClientRect();
-        startLeft = rect.left - parentRect.left;
-        startTop  = rect.top  - parentRect.top;
+
+        hostW = hostRect.width;
+        hostH = hostRect.height;
+
+        // позиция курсора внутри системы координат content
+        const cursorX_inContent = e.clientX - parentRect.left;
+        const cursorY_inContent = e.clientY - parentRect.top;
+
+        // смещение точки захвата относительно левого-верхнего угла animHost
+        grabX = cursorX_inContent - (hostRect.left - parentRect.left);
+        grabY = cursorY_inContent - (hostRect.top  - parentRect.top);
       });
 
-      document.addEventListener('mousemove', (e) => {
-        if (!isDragging) return;
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-        animHost.style.left = startLeft + dx + 'px';
-        animHost.style.top  = startTop + dy + 'px';
+      animHost.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+
+        const parentRect = content.getBoundingClientRect();
+        const cursorX_inContent = e.clientX - parentRect.left;
+        const cursorY_inContent = e.clientY - parentRect.top;
+
+        // новое положение: курсор минус точка захвата
+        let newLeft = cursorX_inContent - grabX;
+        let newTop  = cursorY_inContent - grabY;
+
+        // ограничиваем внутри content
+        const maxLeft = content.clientWidth  - hostW;
+        const maxTop  = content.clientHeight - hostH;
+        newLeft = clamp(newLeft, 0, Math.max(0, maxLeft));
+        newTop  = clamp(newTop, 0, Math.max(0, maxTop));
+
+        animHost.style.left = newLeft + 'px';
+        animHost.style.top  = newTop  + 'px';
       });
 
-      document.addEventListener('mouseup', () => { isDragging = false; });
+      const endDrag = (e) => {
+        if (!dragging) return;
+        dragging = false;
+        animHost.classList.remove('dragging');
+        if (e?.pointerId != null) {
+          try { animHost.releasePointerCapture(e.pointerId); } catch {}
+        }
+      };
+      animHost.addEventListener('pointerup', endDrag);
+      animHost.addEventListener('pointercancel', endDrag);
+      document.addEventListener('pointerup', endDrag);
     })();
   </script>
 </body>
