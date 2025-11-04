@@ -186,11 +186,9 @@
         const W = bg.naturalWidth  || 1;
         const H = bg.naturalHeight || 1;
 
-        // доступная область = внутренняя часть stage за вычетом паддингов (они уже учтены, т.к. padding:32px внутри stage)
         const availW = stage.clientWidth  - 64; // 32 слева + 32 справа
         const availH = stage.clientHeight - 64; // 32 сверху + 32 снизу
 
-        // масштаб только вниз (не увеличиваем мелкие макеты), чтобы не расплывались
         const scale = Math.min(availW / W, availH / H, 1);
 
         const w = Math.floor(W * scale);
@@ -201,13 +199,10 @@
         bg.style.display = 'block';
       }
 
-      // пересчитываем на ресайз окна (если пользователь меняет высоту/ширину)
       window.addEventListener('resize', () => { if (bg.src) fitAndCenter(); });
 
-      // при загрузке изображения — fit
       bg.addEventListener('load', fitAndCenter);
 
-      // Загрузка через кнопку
       if (imgFile) {
         imgFile.addEventListener('change', (e) => {
           const f = e.target.files?.[0]; if (!f) return;
@@ -216,13 +211,12 @@
         });
       }
 
-      // Вставка из буфера
       stage.addEventListener('click', () => stage.focus());
       stage.addEventListener('paste', handlePaste);
       document.addEventListener('paste', handlePaste);
 
       function setImage(src, fileName) {
-        bg.src = src; // onload запустит fitAndCenter()
+        bg.src = src;
         setHint('Скрин вставлен' + (fileName ? ': ' + fileName : ''));
       }
 
@@ -231,7 +225,6 @@
           const cd = e.clipboardData;
           if (!cd) return;
 
-          // 1) Файл-изображение
           const item = [...cd.items].find(i => i.type && i.type.startsWith('image/'));
           if (item) {
             const file = item.getAsFile();
@@ -243,7 +236,6 @@
             }
           }
 
-          // 2) Data URL
           const txt = cd.getData('text/plain');
           if (txt && txt.startsWith('data:image/')) {
             setImage(txt);
@@ -251,7 +243,6 @@
             return;
           }
 
-          // 3) HTML <img>
           const html = cd.getData('text/html');
           if (html) {
             const wrap = document.createElement('div');
@@ -259,7 +250,7 @@
             const img = wrap.querySelector('img');
             if (img && img.src) {
               setImage(img.src);
-              e.preventDefault();
+              e.prevent.preventDefault();
               return;
             }
           }
