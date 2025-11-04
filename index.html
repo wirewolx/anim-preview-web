@@ -44,41 +44,41 @@
 
     /* ===== Feature 2: Screen Preview — ВСЕГДА 32px отступы и без скроллов ===== */
     .viewport-wrap {
-      height: calc(100vh - 20px - 20px); /* минус вертикальные паддинги секции (по 20px) */
+      height: calc(100vh - 20px - 20px);
       box-sizing: border-box;
     }
     .stage-frame {
-      /* занимаем всю высоту viewport-wrap */
       height: 100%;
       width: 100%;
       margin: 0 auto;
       background: #0f141c;
       border: 1px solid #223044;
       border-radius: 12px;
-      /* ключевое: внутренние ОТСТУПЫ 32 px и ЦЕНТРИРОВАНИЕ */
       padding: 32px;
       box-sizing: border-box;
       display: flex;
       align-items: center;
       justify-content: center;
-      overflow: hidden; /* НИКАКИХ скроллов внутри */
+      overflow: hidden;
     }
-    /* Контент — это рамка под картинку + оверлей Lottie.
-       Размеры задаём из JS после расчёта масштаба. */
     .stage-content {
       position: relative;
-      width: 0;  /* выставит JS */
-      height: 0; /* выставит JS */
+      width: 0;
+      height: 0;
     }
     #f2-bgImg {
       position: absolute; inset: 0;
       width: 100%; height: 100%;
-      display: none; /* станет block после загрузки */
+      display: none;
       user-select: none; pointer-events: none;
     }
     #f2-animHost {
       position: absolute; left: 20px; top: 20px; width: 220px; height: 220px; display:none;
       outline: 1.5px dashed rgba(255,255,255,.35); border-radius: 2px; z-index: 2;
+      /* Фикс для drag на тач/трекпаде и без вмешательства нативного скролла */
+      touch-action: none;
+      cursor: move;
+      user-select: none;
     }
     .handle {
       position: absolute; width: 12px; height: 12px; background: #e8eef5; border-radius: 2px; border: 1px solid #1a273a; z-index: 4; display: none;
@@ -118,159 +118,4 @@
 
       <button class="btn" id="f1-startBtn" disabled>Start</button>
       <button class="btn" id="f1-stopBtn" disabled>Stop</button>
-    </div>
-
-    <div id="f1-stage" title="Кликните, чтобы загрузить Lottie" tabindex="0">
-      <span id="f1-stage-hint" class="hint">Кликните сюда или выберите JSON сверху</span>
-    </div>
-    <p class="hint" id="f1-status">Файл не загружен</p>
-  </section>
-
-  <!-- Panel 2 -->
-  <section id="panel-f2" class="panel" role="tabpanel" aria-labelledby="tab-f2">
-    <div class="controls">
-      <label class="btn" for="f2-imgFile">Загрузить скрин</label>
-      <input id="f2-imgFile" type="file" accept="image/png,image/jpeg,image/webp" />
-      <label class="btn" for="f2-jsonFile">Загрузить Lottie JSON</label>
-      <input id="f2-jsonFile" type="file" accept=".json,application/json" />
-
-      <button class="btn" id="f2-startBtn" disabled>Start</button>
-      <button class="btn" id="f2-stopBtn" disabled>Stop</button>
-      <label class="switch"><span>Loop</span><input type="checkbox" id="f2-loopToggle" checked /></label>
-      <span class="hint">Непрозр.:</span>
-      <input id="f2-opacityRange" type="range" min="0" max="100" value="100" />
-    </div>
-
-    <div class="viewport-wrap">
-      <!-- Центрируем и даём паддинги 32px внутри -->
-      <div class="stage-frame" id="f2-stage" tabindex="0" aria-label="Screen Preview area">
-        <div class="stage-content" id="f2-content">
-          <img id="f2-bgImg" alt="Скрин" />
-          <div id="f2-animHost">
-            <div class="handle nw"></div>
-            <div class="handle ne"></div>
-            <div class="handle sw"></div>
-            <div class="handle se"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <p class="hint" id="f2-status">
-      Вставьте скрин (Ctrl/Cmd+V, Copy as PNG в Figma) или загрузите файл — он автоматически впишется по меньшей стороне,
-      останется по центру, с внутренними отступами 32px и без скроллов.
-    </p>
-  </section>
-
-  <!-- Скрипты (обычные теги, без модулей) -->
-  <script src="./scripts/helpers.js"></script>
-  <script src="./scripts/tabs.js"></script>
-  <script src="./scripts/loader.js"></script>
-  <script src="./scripts/preview.js"></script>
-  <script src="./scripts/main.js"></script>
-
-  <!-- Простая логика: fit-to-viewport-with-32px-padding, без эвристик -->
-  <script>
-    (function enablePasteAndFit(){
-      const stage   = document.getElementById('f2-stage');    // рамка с паддингами 32px
-      const content = document.getElementById('f2-content');  // размеры задаём после fit
-      const bg      = document.getElementById('f2-bgImg');    // картинка
-      const status  = document.getElementById('f2-status');
-      const imgFile = document.getElementById('f2-imgFile');
-
-      if (!stage || !content || !bg) return;
-
-      function setHint(msg){ if (status) status.textContent = msg; }
-
-      function fitAndCenter() {
-        const W = bg.naturalWidth  || 1;
-        const H = bg.naturalHeight || 1;
-
-        // доступная область = внутренняя часть stage за вычетом паддингов (они уже учтены, т.к. padding:32px внутри stage)
-        const availW = stage.clientWidth  - 64; // 32 слева + 32 справа
-        const availH = stage.clientHeight - 64; // 32 сверху + 32 снизу
-
-        // масштаб только вниз (не увеличиваем мелкие макеты), чтобы не расплывались
-        const scale = Math.min(availW / W, availH / H, 1);
-
-        const w = Math.floor(W * scale);
-        const h = Math.floor(H * scale);
-
-        content.style.width  = w + 'px';
-        content.style.height = h + 'px';
-        bg.style.display = 'block';
-      }
-
-      // пересчитываем на ресайз окна (если пользователь меняет высоту/ширину)
-      window.addEventListener('resize', () => { if (bg.src) fitAndCenter(); });
-
-      // при загрузке изображения — fit
-      bg.addEventListener('load', fitAndCenter);
-
-      // Загрузка через кнопку
-      if (imgFile) {
-        imgFile.addEventListener('change', (e) => {
-          const f = e.target.files?.[0]; if (!f) return;
-          bg.src = URL.createObjectURL(f);
-          setHint('Скрин загружен: ' + (f.name || 'файл'));
-        });
-      }
-
-      // Вставка из буфера
-      stage.addEventListener('click', () => stage.focus());
-      stage.addEventListener('paste', handlePaste);
-      document.addEventListener('paste', handlePaste);
-
-      function setImage(src, fileName) {
-        bg.src = src; // onload запустит fitAndCenter()
-        setHint('Скрин вставлен' + (fileName ? ': ' + fileName : ''));
-      }
-
-      async function handlePaste(e){
-        try {
-          const cd = e.clipboardData;
-          if (!cd) return;
-
-          // 1) Файл-изображение
-          const item = [...cd.items].find(i => i.type && i.type.startsWith('image/'));
-          if (item) {
-            const file = item.getAsFile();
-            if (file) {
-              const url = URL.createObjectURL(file);
-              setImage(url, file.name);
-              e.preventDefault();
-              return;
-            }
-          }
-
-          // 2) Data URL
-          const txt = cd.getData('text/plain');
-          if (txt && txt.startsWith('data:image/')) {
-            setImage(txt);
-            e.preventDefault();
-            return;
-          }
-
-          // 3) HTML <img>
-          const html = cd.getData('text/html');
-          if (html) {
-            const wrap = document.createElement('div');
-            wrap.innerHTML = html;
-            const img = wrap.querySelector('img');
-            if (img && img.src) {
-              setImage(img.src);
-              e.preventDefault();
-              return;
-            }
-          }
-
-          setHint('В буфере нет картинки. В Figma: Copy as PNG → Ctrl/Cmd+V здесь.');
-        } catch (err) {
-          console.error('Paste error:', err);
-          setHint('Не удалось вставить изображение.');
-        }
-      }
-    })();
-  </script>
-</body>
-</html>
+    </d
