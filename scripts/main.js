@@ -1,45 +1,255 @@
-(function boot() {
-  const start = () => {
-    try {
-      initTabs([
-        { btnId: 'tab-f1', panelId: 'panel-f1' },
-        { btnId: 'tab-f2', panelId: 'panel-f2' },
-      ]);
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>Lottie — Loader + Screen Preview</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="./styles/main.css" />
+  <!-- Lottie глобально -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
+  <style>
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; color-scheme: dark; }
+    body { margin: 0; background:#0b0f14; color:#e8eef5; }
+    /* Tabs */
+    .tabs { display:flex; gap:8px; padding:12px 16px; border-bottom:1px solid #223044; background:#0e1420; position:sticky; top:0; z-index:20; }
+    .tab-btn { padding:10px 14px; border-radius:8px; border:1px solid #2a3b55; background:#172335; color:#e8eef5; cursor:pointer; }
+    .tab-btn[aria-selected="true"] { background:#1f2c43; border-color:#3b5175; }
+    .panel { display:none; padding:20px; }
+    .panel.active { display:block; }
 
-      initLoader({
-        fileInput:   '#f1-file',
-        stage:       '#f1-stage',
-        statusEl:    '#f1-status',
-        sizeSelect:  '#f1-sizeSelect',
-        colorPicker: '#f1-colorPicker',
-        colorInput:  '#f1-colorInput',
-        loopToggle:  '#f1-loopToggle',
-        startBtn:    '#f1-startBtn',
-        stopBtn:     '#f1-stopBtn',
-      });
-
-      initPreview({
-        imgFile:     '#f2-imgFile',
-        jsonFile:    '#f2-jsonFile',
-        bgImg:       '#f2-bgImg',
-        stage:       '#f2-stage',
-        animHost:    '#f2-animHost',
-        startBtn:    '#f2-startBtn',
-        stopBtn:     '#f2-stopBtn',
-        loopToggle:  '#f2-loopToggle',
-        opacityRange:'#f2-opacityRange',
-        statusEl:    '#f2-status',
-        handles:     '#f2-animHost .handle',
-      });
-    } catch (e) {
-      console.error('Init error:', e);
-      alert('Ошибка инициализации. Посмотри консоль браузера (F12) — я вывел подробности.');
+    /* Controls */
+    .controls { margin-bottom:16px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:center; }
+    input[type="file"] { display:none; }
+    .btn, select, input[type="text"], input[type="color"], input[type="range"], label.switch {
+      border:1px solid #2a3b55; background:#172335; color:#e8eef5; border-radius:8px; padding:8px 10px; font-size:14px;
     }
-  };
+    .btn { cursor:pointer; }
+    .hint { font-size:13px; color:#9fb0c7; text-align:center; }
+    .row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    /* Switch */
+    .switch { display:inline-flex; align-items:center; gap:8px; padding:6px 8px; background:#101725; border:1px solid #2a3b55; border-radius:8px; }
+    .switch input { appearance:none; width:40px; height:22px; background:#213048; border-radius:999px; position:relative; outline:none; cursor:pointer; }
+    .switch input:checked { background:#3a6cf0; }
+    .switch input::after { content:""; position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:50%; background:#e8eef5; transition:left .2s; }
+    .switch input:checked::after { left:21px; }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', start);
-  } else {
-    start();
-  }
-})();
+    /* Feature 1: Loader */
+    #f1-stage {
+      padding:64px; display:flex; align-items:center; justify-content:center;
+      background:#0f141c; border:1px dashed #2a3b55; border-radius:12px; overflow:hidden;
+      box-sizing:content-box; transition: width .2s, height .2s, background .2s;
+      margin:0 auto; cursor:pointer;
+    }
+    #f1-stage:hover { border-color:#3a6cf0; }
+
+    /* ===== Feature 2: Screen Preview (32px padding, no scrolls) ===== */
+    .viewport-wrap {
+      height: calc(100vh - 20px - 20px);
+      box-sizing: border-box;
+    }
+    .stage-frame {
+      height: 100%;
+      width: 100%;
+      margin: 0 auto;
+      background: #0f141c;
+      border: 1px solid #223044;
+      border-radius: 12px;
+      padding: 32px;               /* внутренние отступы 32px */
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;            /* без скроллов */
+    }
+    .stage-content {
+      position: relative;
+      width: 0;  /* выставит JS */
+      height: 0; /* выставит JS */
+    }
+    #f2-bgImg {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      display: none;
+      user-select: none; pointer-events: none;
+    }
+    #f2-animHost {
+      position: absolute; left: 20px; top: 20px; width: 220px; height: 220px; display:none;
+      outline: 1.5px dashed rgba(255,255,255,.35); border-radius: 2px; z-index: 2;
+      /* важно для корректного dnd */
+      touch-action: none;
+      user-select: none;
+      cursor: move;
+    }
+    .handle {
+      position: absolute; width: 12px; height: 12px; background: #e8eef5; border-radius: 2px; border: 1px solid #1a273a; z-index: 4; display: none;
+    }
+    .handle.nw { left:-7px; top:-7px; cursor:nwse-resize; }
+    .handle.ne { right:-7px; top:-7px; cursor:nesw-resize; }
+    .handle.sw { left:-7px; bottom:-7px; cursor:nesw-resize; }
+    .handle.se { right:-7px; bottom:-7px; cursor:nwse-resize; }
+  </style>
+</head>
+<body>
+  <nav class="tabs" role="tablist">
+    <button class="tab-btn" id="tab-f1" aria-selected="true">Lottie Loader</button>
+    <button class="tab-btn" id="tab-f2" aria-selected="false">Screen Preview (fit, 32px paddings)</button>
+  </nav>
+
+  <!-- Panel 1 -->
+  <section id="panel-f1" class="panel active" role="tabpanel" aria-labelledby="tab-f1">
+    <div class="controls">
+      <label class="btn" for="f1-file">Выбрать JSON</label>
+      <input id="f1-file" type="file" accept=".json,application/json" />
+
+      <select id="f1-sizeSelect">
+        <option value="120">120×120</option>
+        <option value="160">160×160</option>
+        <option value="180">180×180</option>
+        <option value="200">200×200</option>
+        <option value="220" selected>220×220</option>
+      </select>
+
+      <div class="row">
+        <input type="color" id="f1-colorPicker" value="#0f141c" />
+        <input type="text" id="f1-colorInput" value="#0f141c" maxlength="7" placeholder="#rrggbb" />
+      </div>
+
+      <label class="switch"><span>Loop</span><input type="checkbox" id="f1-loopToggle" checked /></label>
+
+      <button class="btn" id="f1-startBtn" disabled>Start</button>
+      <button class="btn" id="f1-stopBtn" disabled>Stop</button>
+    </div>
+
+    <div id="f1-stage" title="Кликните, чтобы загрузить Lottie" tabindex="0">
+      <span id="f1-stage-hint" class="hint">Кликните сюда или выберите JSON сверху</span>
+    </div>
+    <p class="hint" id="f1-status">Файл не загружен</p>
+  </section>
+
+  <!-- Panel 2 -->
+  <section id="panel-f2" class="panel" role="tabpanel" aria-labelledby="tab-f2">
+    <div class="controls">
+      <label class="btn" for="f2-imgFile">Загрузить скрин</label>
+      <input id="f2-imgFile" type="file" accept="image/png,image/jpeg,image/webp" />
+      <label class="btn" for="f2-jsonFile">Загрузить Lottie JSON</label>
+      <input id="f2-jsonFile" type="file" accept=".json,application/json" />
+
+      <button class="btn" id="f2-startBtn" disabled>Start</button>
+      <button class="btn" id="f2-stopBtn" disabled>Stop</button>
+      <label class="switch"><span>Loop</span><input type="checkbox" id="f2-loopToggle" checked /></label>
+      <span class="hint">Непрозр.:</span>
+      <input id="f2-opacityRange" type="range" min="0" max="100" value="100" />
+    </div>
+
+    <div class="viewport-wrap">
+      <div class="stage-frame" id="f2-stage" tabindex="0" aria-label="Screen Preview area">
+        <div class="stage-content" id="f2-content">
+          <img id="f2-bgImg" alt="Скрин" />
+          <div id="f2-animHost">
+            <div class="handle nw"></div>
+            <div class="handle ne"></div>
+            <div class="handle sw"></div>
+            <div class="handle se"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="hint" id="f2-status">
+      Вставьте скрин (Ctrl/Cmd+V, Copy as PNG в Figma) или загрузите файл — он автоматически впишется по меньшей стороне,
+      останется по центру, с внутренними отступами 32px и без скроллов.
+    </p>
+  </section>
+
+  <!-- Скрипты (обычные теги, без модулей) -->
+  <script src="./scripts/helpers.js"></script>
+  <script src="./scripts/tabs.js"></script>
+  <script src="./scripts/loader.js"></script>
+  <script src="./scripts/preview.js"></script>
+  <script src="./scripts/main.js"></script>
+
+  <!-- Fit-to-viewport with 32px padding -->
+  <script>
+    (function enablePasteAndFit(){
+      const stage   = document.getElementById('f2-stage');
+      const content = document.getElementById('f2-content');
+      const bg      = document.getElementById('f2-bgImg');
+      const status  = document.getElementById('f2-status');
+      const imgFile = document.getElementById('f2-imgFile');
+
+      if (!stage || !content || !bg) return;
+
+      function setHint(msg){ if (status) status.textContent = msg; }
+
+      function fitAndCenter() {
+        const W = bg.naturalWidth  || 1;
+        const H = bg.naturalHeight || 1;
+        const availW = stage.clientWidth  - 64;
+        const availH = stage.clientHeight - 64;
+        const scale = Math.min(availW / W, availH / H, 1);
+        const w = Math.floor(W * scale);
+        const h = Math.floor(H * scale);
+        content.style.width  = w + 'px';
+        content.style.height = h + 'px';
+        bg.style.display = 'block';
+      }
+
+      window.addEventListener('resize', () => { if (bg.src) fitAndCenter(); });
+      bg.addEventListener('load', fitAndCenter);
+
+      if (imgFile) {
+        imgFile.addEventListener('change', (e) => {
+          const f = e.target.files?.[0]; if (!f) return;
+          bg.src = URL.createObjectURL(f);
+          setHint('Скрин загружен: ' + (f.name || 'файл'));
+        });
+      }
+
+      stage.addEventListener('click', () => stage.focus());
+      stage.addEventListener('paste', handlePaste);
+      document.addEventListener('paste', handlePaste);
+
+      function setImage(src, fileName) {
+        bg.src = src;
+        setHint('Скрин вставлен' + (fileName ? ': ' + fileName : ''));
+      }
+
+      async function handlePaste(e){
+        try {
+          const cd = e.clipboardData;
+          if (!cd) return;
+
+          const item = [...cd.items].find(i => i.type && i.type.startsWith('image/'));
+          if (item) {
+            const file = item.getAsFile();
+            if (file) {
+              const url = URL.createObjectURL(file);
+              setImage(url, file.name);
+              e.preventDefault();
+              return;
+            }
+          }
+
+          const txt = cd.getData('text/plain');
+          if (txt && txt.startsWith('data:image/')) {
+            setImage(txt);
+            e.preventDefault();
+            return;
+          }
+
+          const html = cd.getData('text/html');
+          if (html) {
+            const wrap = document.createElement('div');
+            wrap.innerHTML = html;
+            const img = wrap.querySelector('img');
+            if (img && img.src) {
+              setImage(img.src);
+              e.preventDefault();
+              return;
+            }
+          }
+
+          setHint('В буфере нет картинки. В Figma: Copy as PNG → Ctrl/Cmd+V здесь.');
+        } catch (err) {
+          console.error('Paste error:', err);
+          setHint('Не удалось вставит
