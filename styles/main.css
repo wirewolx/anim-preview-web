@@ -73,16 +73,14 @@ input[type="file"] { display:none; }
 
 /* Оверлей для Lottie — как раньше, поверх контента */
 #f2-animHost {
-  position: absolute;
-  left: 20px;
-  top: 20px;
-  width: 220px;
-  height: 220px;
-  display: none;
+  position: absolute; left: 20px; top: 20px; width: 220px; height: 220px;
   outline: 1.5px dashed rgba(255,255,255,.35);
-  border-radius: 2px;
-  z-index: 2;
+  border-radius: 2px; z-index: 2;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-drag: none;
 }
+#f2-animHost.dragging { cursor: grabbing; }
 .handle {
   position: absolute;
   width: 12px; height: 12px;
@@ -93,4 +91,5 @@ input[type="file"] { display:none; }
 .handle.ne { right:-7px; top:-7px; cursor:nesw-resize; }
 .handle.sw { left:-7px; bottom:-7px; cursor:nesw-resize; }
 .handle.se { right:-7px; bottom:-7px; cursor:nwse-resize; }
+
 
