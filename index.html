@@ -4,13 +4,13 @@
   <meta charset="utf-8" />
   <title>Lottie Loader</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="./styles/main.css" />
+  <!-- единственная зависимость -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
   <style>
     :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; color-scheme: dark; }
     body { margin: 0; background:#0b0f14; color:#e8eef5; }
-    .tabs { display:flex; gap:8px; padding:12px 16px; border-bottom:1px solid #223044; background:#0e1420; position:sticky; top:0; z-index:20; }
-    .tab-btn { padding:10px 14px; border-radius:8px; border:1px solid #2a3b55; background:#1f2c43; color:#e8eef5; cursor:pointer; }
+    .header { padding:12px 16px; border-bottom:1px solid #223044; background:#0e1420; }
+    .title { font-weight:600; }
     .panel { padding:20px; }
     .controls { margin-bottom:16px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:center; }
     input[type="file"] { display:none; }
@@ -25,26 +25,28 @@
     .switch input:checked { background:#3a6cf0; }
     .switch input::after { content:""; position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:50%; background:#e8eef5; transition:left .2s; }
     .switch input:checked::after { left:21px; }
+
     #f1-stage {
       padding:64px; display:flex; align-items:center; justify-content:center;
       background:#0f141c; border:1px dashed #2a3b55; border-radius:12px; overflow:hidden;
-      box-sizing:content-box; transition: width .2s, height .2s, background .2s;
+      transition: width .2s, height .2s, background .2s;
       margin:0 auto; cursor:pointer;
+      width: 220px; height: 220px; /* дефолт под select */
     }
     #f1-stage:hover { border-color:#3a6cf0; }
   </style>
 </head>
 <body>
-  <nav class="tabs" role="tablist">
-    <button class="tab-btn" aria-selected="true">Lottie Loader</button>
-  </nav>
+  <header class="header">
+    <div class="title">Lottie Loader</div>
+  </header>
 
-  <section id="panel-f1" class="panel" role="tabpanel">
+  <section id="panel-f1" class="panel">
     <div class="controls">
       <label class="btn" for="f1-file">Выбрать JSON</label>
       <input id="f1-file" type="file" accept=".json,application/json" />
 
-      <select id="f1-sizeSelect">
+      <select id="f1-sizeSelect" aria-label="Размер">
         <option value="120">120×120</option>
         <option value="160">160×160</option>
         <option value="180">180×180</option>
@@ -52,7 +54,7 @@
         <option value="220" selected>220×220</option>
       </select>
 
-      <div class="row">
+      <div class="row" role="group" aria-label="Цвет фона">
         <input type="color" id="f1-colorPicker" value="#0f141c" />
         <input type="text" id="f1-colorInput" value="#0f141c" maxlength="7" placeholder="#rrggbb" />
       </div>
@@ -69,8 +71,115 @@
     <p class="hint" id="f1-status">Файл не загружен</p>
   </section>
 
-  <script src="./scripts/helpers.js"></script>
-  <script src="./scripts/loader.js"></script>
-  <script src="./scripts/main.js"></script>
+  <!-- Встроенная логика Lottie Loader -->
+  <script>
+    (function(){
+      /*** DOM ***/
+      const fileInput   = document.getElementById('f1-file');
+      const sizeSelect  = document.getElementById('f1-sizeSelect');
+      const colorPick   = document.getElementById('f1-colorPicker');
+      const colorInput  = document.getElementById('f1-colorInput');
+      const loopToggle  = document.getElementById('f1-loopToggle');
+      const startBtn    = document.getElementById('f1-startBtn');
+      const stopBtn     = document.getElementById('f1-stopBtn');
+      const stage       = document.getElementById('f1-stage');
+      const stageHint   = document.getElementById('f1-stage-hint');
+      const statusEl    = document.getElementById('f1-status');
+
+      /*** state ***/
+      let anim = null;
+      let jsonData = null;
+
+      /*** helpers ***/
+      function setStatus(msg){ statusEl.textContent = msg; }
+      function enableControls(loaded){
+        startBtn.disabled = !loaded;
+        stopBtn.disabled  = !loaded;
+      }
+      function setStageSize(px){
+        stage.style.width  = px + 'px';
+        stage.style.height = px + 'px';
+      }
+      function setBg(color){
+        stage.style.background = color;
+        colorPick.value = color;
+        colorInput.value = color;
+      }
+      function validHex(v){
+        return /^#([0-9a-f]{6})$/i.test(v);
+      }
+
+      /*** UI bindings ***/
+      sizeSelect.addEventListener('change', () => {
+        setStageSize(parseInt(sizeSelect.value,10));
+      });
+
+      colorPick.addEventListener('input', () => setBg(colorPick.value));
+      colorInput.addEventListener('input', () => {
+        const v = colorInput.value.trim();
+        if (validHex(v)) setBg(v);
+      });
+
+      loopToggle.addEventListener('change', () => {
+        if (anim) anim.loop = loopToggle.checked;
+      });
+
+      stage.addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', async (e) => {
+        const f = e.target.files?.[0];
+        if (!f) return;
+        try {
+          const txt = await f.text();
+          jsonData = JSON.parse(txt);
+          loadAnimation();
+          setStatus('Загружен: ' + (f.name || 'Lottie JSON'));
+        } catch(err){
+          console.error(err);
+          setStatus('Ошибка чтения JSON');
+        }
+      });
+
+      startBtn.addEventListener('click', () => { if (anim) anim.play(); });
+      stopBtn .addEventListener('click', () => { if (anim) anim.stop(); });
+
+      /*** core ***/
+      function destroyAnim(){
+        if (anim) { anim.destroy(); anim = null; }
+        if (stageHint) stageHint.style.display = 'none';
+      }
+
+      function loadAnimation(){
+        if (!jsonData) return;
+        destroyAnim();
+
+        anim = lottie.loadAnimation({
+          container: stage,
+          renderer: 'svg',
+          loop: loopToggle.checked,
+          autoplay: true,
+          animationData: jsonData,
+          rendererSettings: {
+            preserveAspectRatio: 'xMidYMid meet',
+            progressiveLoad: true,
+          }
+        });
+
+        anim.addEventListener('DOMLoaded', () => {
+          enableControls(true);
+          stage.setAttribute('title', 'Анимация загружена');
+        });
+
+        anim.addEventListener('data_failed', () => {
+          setStatus('Ошибка: не удалось загрузить анимацию');
+          enableControls(false);
+        });
+      }
+
+      /*** init ***/
+      setStageSize(parseInt(sizeSelect.value,10));
+      setBg(colorPick.value);
+      enableControls(false);
+    })();
+  </script>
 </body>
 </html>
