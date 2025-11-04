@@ -2,171 +2,179 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <title>Lottie Loader — drag/resize + bg</title>
+  <title>Lottie Loader + Background Fit</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
   <style>
     :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; color-scheme: dark; }
-    body { margin:0; background:#0b0f14; color:#e8eef5; display:flex; flex-direction:column; min-height:100vh; }
-    .header { padding:12px 16px; border-bottom:1px solid #223044; background:#0e1420; text-align:center; font-weight:600; }
-    .panel { padding:20px; box-sizing:border-box; display:flex; flex-direction:column; align-items:center; gap:12px; }
-
-    .controls { display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:center; }
+    body {
+      margin: 0; background:#0b0f14; color:#e8eef5;
+      display:flex; flex-direction:column; align-items:center; min-height:100vh;
+    }
+    .header { width:100%; padding:12px 16px; border-bottom:1px solid #223044; background:#0e1420; }
+    .title { font-weight:600; text-align:center; }
+    .panel { width:100%; padding:20px; box-sizing:border-box; display:flex; flex-direction:column; align-items:center; }
+    .controls { margin-bottom:16px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:center; }
     input[type="file"] { display:none; }
-    .btn, input[type="color"], input[type="text"], input[type="range"], label.switch {
+    .btn, select, input[type="text"], input[type="color"], input[type="range"], label.switch {
       border:1px solid #2a3b55; background:#172335; color:#e8eef5; border-radius:8px; padding:8px 10px; font-size:14px;
     }
     .btn { cursor:pointer; }
     .hint { font-size:13px; color:#9fb0c7; text-align:center; }
-
+    .row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
     .switch { display:inline-flex; align-items:center; gap:8px; padding:6px 8px; background:#101725; border:1px solid #2a3b55; border-radius:8px; }
     .switch input { appearance:none; width:40px; height:22px; background:#213048; border-radius:999px; position:relative; outline:none; cursor:pointer; }
     .switch input:checked { background:#3a6cf0; }
     .switch input::after { content:""; position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:50%; background:#e8eef5; transition:left .2s; }
     .switch input:checked::after { left:21px; }
 
-    /* Сцена: 32px внутренние отступы, центрируется, макс. ширина 1440/375 */
+    /* Stage */
     #f1-stage {
       position: relative;
-      width:100%;
-      max-width:1440px;
-      aspect-ratio:16/9;
-      margin:0 auto;
-      border:1px dashed #2a3b55;
-      border-radius:12px;
-      background:#0f141c;
-      padding:32px;               /* важные внутренние отступы */
-      box-sizing:border-box;
-      overflow:hidden;
-      display:block;
-      cursor:pointer;             /* чтобы понятно, что кликабельно */
+      background:#0f141c; border:1px dashed #2a3b55; border-radius:12px; overflow:hidden;
+      margin:0 auto; cursor:pointer; display:flex; align-items:center; justify-content:center;
+      box-sizing:border-box; padding:32px; /* внутренние 32px */
+      width:100%; max-width:1440px; aspect-ratio:16/9;
     }
-    @media (max-width:768px){ #f1-stage { max-width:375px; aspect-ratio:9/16; } }
+    @media (max-width:768px) { #f1-stage { max-width:375px; aspect-ratio:9/16; } }
     #f1-stage:hover { border-color:#3a6cf0; }
 
-    /* Фон */
-    #bgImg{
+    /* Фон под Lottie — фикс: только inset и явный z-index */
+    #bgImg {
       position:absolute;
-      inset:32px;
+      inset:32px;                 /* 32px отступы со всех сторон */
       object-fit:contain;
-      width:auto; height:auto; max-width:calc(100% - 64px); max-height:calc(100% - 64px);
       opacity:1;
       pointer-events:none;
       user-select:none;
       border-radius:8px;
-      z-index:0;
-      display:none;
+      z-index:0;                  /* ниже Lottie */
+      display:none;               /* включим, когда загрузится */
     }
 
-    /* Lottie-хост с ручками */
-    #lottieHost{
-      position:absolute;
-      left:32px; top:32px; width:220px; height:220px;
-      outline:1.5px dashed rgba(255,255,255,.45);
-      border-radius:4px;
-      z-index:1;
-      box-sizing:border-box;
-      touch-action:none;
-      cursor:move;
-      display:none;
-      background:transparent;
-    }
-    #lottieMount{ position:absolute; inset:0; }
-    /* отключаем перехват кликов самим svg, чтобы drag работал по всей рамке */
-    #lottieMount svg{ pointer-events:none; width:100%; height:100%; }
-
-    .handle{ position:absolute; width:12px; height:12px; background:#e8eef5; border:1px solid #1a273a; border-radius:2px; z-index:2; }
-    .handle.nw{ left:-7px; top:-7px; cursor:nwse-resize; }
-    .handle.ne{ right:-7px; top:-7px; cursor:nesw-resize; }
-    .handle.sw{ left:-7px; bottom:-7px; cursor:nesw-resize; }
-    .handle.se{ right:-7px; bottom:-7px; cursor:nwse-resize; }
-    .handle.n{ left:50%; transform:translateX(-50%); top:-7px; cursor:ns-resize; }
-    .handle.s{ left:50%; transform:translateX(-50%); bottom:-7px; cursor:ns-resize; }
-    .handle.w{ top:50%; transform:translateY(-50%); left:-7px; cursor:ew-resize; }
-    .handle.e{ top:50%; transform:translateY(-50%); right:-7px; cursor:ew-resize; }
-
-    #f1-stage-hint{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:3; pointer-events:none; }
+    /* Lottie (svg) выше фона */
+    #f1-stage svg { position:relative; z-index:1; }
+    #f1-stage-hint { position:relative; z-index:2; }
   </style>
 </head>
 <body>
-  <header class="header">Lottie Loader</header>
+  <header class="header">
+    <div class="title">Lottie Loader</div>
+  </header>
 
-  <section class="panel">
+  <section id="panel-f1" class="panel">
     <div class="controls">
       <label class="btn" for="f1-file">Выбрать JSON</label>
       <input id="f1-file" type="file" accept=".json,application/json" />
-      <div class="switch"><span>Loop</span><input type="checkbox" id="f1-loopToggle" checked /></div>
-      <button class="btn" id="f1-startBtn" disabled>Start</button>
-      <button class="btn" id="f1-stopBtn" disabled>Stop</button>
-      <div class="controls" style="margin:0;">
+
+      <div class="row" role="group" aria-label="Цвет фона">
         <input type="color" id="f1-colorPicker" value="#0f141c" />
         <input type="text" id="f1-colorInput" value="#0f141c" maxlength="7" placeholder="#rrggbb" />
       </div>
+
+      <label class="switch"><span>Loop</span><input type="checkbox" id="f1-loopToggle" checked /></label>
+      <button class="btn" id="f1-startBtn" disabled>Start</button>
+      <button class="btn" id="f1-stopBtn" disabled>Stop</button>
     </div>
 
     <div class="controls">
       <label class="btn" for="f1-bgFile">Загрузить фон</label>
       <input id="f1-bgFile" type="file" accept="image/png,image/jpeg,image/webp" />
-      <label class="controls" style="gap:6px; margin:0;">
+      <label class="row" style="gap:6px;">
         <span class="hint">Прозрачность</span>
         <input id="bgOpacity" type="range" min="0" max="100" value="100" />
       </label>
       <button class="btn" id="bgClearBtn">Очистить фон</button>
     </div>
 
-    <div id="f1-stage" title="Кликните, чтобы выбрать JSON или фон" tabindex="0">
-      <img id="bgImg" alt="Фон" />
-      <div id="lottieHost" aria-label="Lottie layer">
-        <div id="lottieMount"></div>
-        <div class="handle nw"></div><div class="handle ne"></div>
-        <div class="handle sw"></div><div class="handle se"></div>
-        <div class="handle n"></div><div class="handle s"></div>
-        <div class="handle w"></div><div class="handle e"></div>
-      </div>
-      <span id="f1-stage-hint" class="hint">Кликните сюда, чтобы выбрать JSON</span>
+    <div id="f1-stage" title="Кликните, чтобы загрузить Lottie" tabindex="0">
+      <img id="bgImg" alt="Фоновое изображение" />
+      <span id="f1-stage-hint" class="hint">Кликните сюда или выберите JSON сверху</span>
     </div>
-
     <p class="hint" id="f1-status">Файл не загружен</p>
   </section>
 
   <script>
     (function(){
-      // refs
-      const stage     = document.getElementById('f1-stage');
-      const hint      = document.getElementById('f1-stage-hint');
-      const statusEl  = document.getElementById('f1-status');
-
       const fileInput = document.getElementById('f1-file');
+      const colorPick = document.getElementById('f1-colorPicker');
+      const colorInput= document.getElementById('f1-colorInput');
       const loopToggle= document.getElementById('f1-loopToggle');
       const startBtn  = document.getElementById('f1-startBtn');
       const stopBtn   = document.getElementById('f1-stopBtn');
-
-      const colorPick = document.getElementById('f1-colorPicker');
-      const colorInput= document.getElementById('f1-colorInput');
+      const stage     = document.getElementById('f1-stage');
+      const stageHint = document.getElementById('f1-stage-hint');
+      const statusEl  = document.getElementById('f1-status');
 
       const bgFileInput = document.getElementById('f1-bgFile');
       const bgImg       = document.getElementById('bgImg');
       const bgOpacity   = document.getElementById('bgOpacity');
       const bgClearBtn  = document.getElementById('bgClearBtn');
 
-      const host  = document.getElementById('lottieHost');
-      const mount = document.getElementById('lottieMount');
-
       let anim = null, jsonData = null;
 
-      // status
-      function setStatus(t){ statusEl.textContent = t; }
+      function setStatus(msg){ statusEl.textContent = msg; }
+      function enableControls(loaded){ startBtn.disabled = !loaded; stopBtn.disabled = !loaded; }
+      function setBgColor(c){ stage.style.background=c; colorPick.value=c; colorInput.value=c; }
+      function validHex(v){ return /^#([0-9a-f]{6})$/i.test(v); }
 
-      // make stage clickable: если ничего не выбрано — открываем JSON выбор
-      stage.addEventListener('click', (e)=>{
-        const t = e.target;
-        const isOnHandle = t.classList && t.classList.contains('handle');
-        if (isOnHandle) return; // не мешаем resize
-        // если кликаем внутри хоста — тоже не мешаем drag
-        if (t.closest && t.closest('#lottieHost')) return;
-        fileInput.click();
+      colorPick.addEventListener('input',()=>setBgColor(colorPick.value));
+      colorInput.addEventListener('input',()=>{const v=colorInput.value.trim(); if(validHex(v)) setBgColor(v);});
+      loopToggle.addEventListener('change',()=>{if(anim) anim.loop=loopToggle.checked;});
+
+      stage.addEventListener('click',()=>fileInput.click());
+      fileInput.addEventListener('change',async e=>{
+        const f=e.target.files?.[0]; if(!f) return;
+        try{
+          const txt=await f.text(); jsonData=JSON.parse(txt);
+          loadAnimation(); setStatus('Загружен: '+(f.name||'Lottie JSON'));
+        }catch(err){console.error(err); setStatus('Ошибка чтения JSON');}
       });
 
-      // color controls
-      function setBgColor(c){ stage.style.background = c; colorPick.value=c; colorInput.value=c; }
-      function validHex(v){ return /^#([0-9a-f]{6})$/i.test(v); }
+      startBtn.addEventListener('click',()=>{if(anim) anim.play();});
+      stopBtn .addEventListener('click',()=>{if(anim) anim.stop();});
+
+      // === Фон ===
+      bgFileInput.addEventListener('change',e=>{
+        const f=e.target.files?.[0]; if(!f) return;
+        const url=URL.createObjectURL(f);
+        // показываем после загрузки, чтобы избежать мигания
+        bgImg.onload = () => {
+          bgImg.style.display = 'block';
+          setStatus('Фон: '+(f.name||'изображение'));
+          // можно освободить URL, когда больше не нужен
+          // URL.revokeObjectURL(url); // раскомментируй, если не будешь менять прозрачность/повторно использовать
+        };
+        bgImg.src = url;
+      });
+
+      bgOpacity.addEventListener('input',()=>{ bgImg.style.opacity=(+bgOpacity.value/100); });
+      bgClearBtn.addEventListener('click',()=>{
+        bgImg.removeAttribute('src'); bgImg.style.display='none'; setStatus('Фон очищен');
+      });
+
+      function destroyAnim(){ if(anim){anim.destroy(); anim=null;} if(stageHint) stageHint.style.display='none'; }
+
+      function loadAnimation(){
+        if(!jsonData) return;
+        destroyAnim();
+        anim=lottie.loadAnimation({
+          container:stage,
+          renderer:'svg',
+          loop:loopToggle.checked,
+          autoplay:true,
+          animationData:jsonData,
+          rendererSettings:{ preserveAspectRatio:'xMidYMid meet' }
+        });
+        anim.addEventListener('DOMLoaded',()=>{ enableControls(true); });
+        anim.addEventListener('data_failed',()=>{ setStatus('Ошибка: не удалось загрузить анимацию'); enableControls(false); });
+      }
+
+      // init
+      setBgColor(colorPick.value);
+      bgImg.style.display='none';
+      enableControls(false);
+    })();
+  </script>
+</body>
+</html>
