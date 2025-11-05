@@ -36,20 +36,34 @@ async function shareCreateLink() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Master-Key": "$2a$10$FvoTg452fwA4QAw4/b1IBO8zW9uW6GkTeKn6oK3L3vdaxVysBmWv6" // ← вставь свой ключ сюда
+        "X-Master-Key": "$2a$10$FvoTg452fwA4QAw4/b1IBO8zW9uW6GkTeKn6oK3L3vdaxVysBmWv6",   // ← сюда твой ключ
+        "X-Bin-Private": "false"          // ← делаем бин публичным (читать можно без ключа)
       },
       body: JSON.stringify(stateObj)
     });
 
-    const data = await res.json();
-    const id = data.metadata.id;
-    const link = `${location.origin}${location.pathname}#id=${id}`;
+    // проверка ответа и вывод причины в консоль
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error('JSONBin error:', res.status, txt);
+      alert(`Ошибка при создании ссылки (код ${res.status}).`);
+      return;
+    }
 
+    const data = await res.json();
+    const id = data?.metadata?.id;   // <- берём короткий id
+    if (!id) {
+      console.error('No id in response:', data);
+      alert('Ошибка: сервер не вернул id.');
+      return;
+    }
+
+    const link = `${location.origin}${location.pathname}#id=${id}`;
     await navigator.clipboard.writeText(link);
     alert("Ссылка скопирована в буфер обмена!");
   } catch (err) {
     console.error(err);
-    alert("Ошибка при создании ссылки.");
+    alert("Ошибка сети при создании ссылки.");
   }
 }
 
@@ -370,8 +384,7 @@ layoutToEmpty();
   const id = h.slice(4);
 
   try {
-    const res = await fetch(`https://api.jsonbin.io/v3/b/${id}/latest`, {
-      headers: { "X-Master-Key": "$2a$10$FvoTg452fwA4QAw4/b1IBO8zW9uW6GkTeKn6oK3L3vdaxVysBmWv6" } // ← тот же ключ
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${id}/latest`);
     });
     const { record: stateObj } = await res.json();
 
@@ -416,3 +429,4 @@ layoutToEmpty();
     console.warn("Share state load error:", e);
   }
 })();
+
