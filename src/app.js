@@ -22,51 +22,92 @@ function getLottieRect() {
     height: parseFloat(s.height) || 200
   };
 }
+// === image compress helper (WebP) ===
+async function compressDataUrlToWebP(dataURL, maxW = 1280, maxH = 1280, quality = 0.75) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      const k = Math.min(1, maxW / width, maxH / height);
+      if (k < 1) { width = Math.round(width * k); height = Math.round(height * k); }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      const out = canvas.toDataURL('image/webp', quality);
+      resolve(out);
+    };
+    img.onerror = reject;
+    img.src = dataURL;
+  });
+}
 async function shareCreateLink() {
+  // 1) собираем состояние
+  let bg = getBgUrl() || null;
+  let mountState = getMountState();
+
+  // 2) сжимаем фон, если это dataURL
+  if (bg && bg.startsWith('data:image/')) {
+    try { bg = await compressDataUrlToWebP(bg, 1280, 1280, 0.75); } catch {}
+  }
+
+  // 3) сжимаем foreground IMG, если это dataURL
+  if (mountState && mountState.type === 'img' && mountState.data && mountState.data.startsWith('data:image/')) {
+    try { mountState = { ...mountState, data: await compressDataUrlToWebP(mountState.data, 1280, 1280, 0.75) }; } catch {}
+  }
+
   const stateObj = {
     mode: MODE,
     base: { w: BASE_W, h: BASE_H },
-    bg: getBgUrl() || null,
-    mount: getMountState(),
+    bg,
+    mount: mountState,
     lottie: animation ? { data: animation.animationData || null, rect: getLottieRect() } : null
   };
 
+  // 4) проверяем лимит jsonbin free (100 KB)
+  const raw = JSON.stringify(stateObj);
+  const bytes = new Blob([raw]).size;
+  if (bytes > 100 * 1024) {
+    alert(`Сцена ${Math.round(bytes/1024)} KB — больше лимита 100 KB (jsonbin Free).
+Сделай фон/картинку меньше, снизь качество, или облегчи Lottie.`);
+    return;
+  }
+
+  // 5) отправляем в jsonbin (публичный bin)
   try {
     const res = await fetch("https://api.jsonbin.io/v3/b", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Master-Key": "$2a$10$FvoTg452fwA4QAw4/b1IBO8zW9uW6GkTeKn6oK3L3vdaxVysBmWv6",  // <- вставь свой ключ
-        "X-Bin-Private": "false"         // бин публичный (читать без ключа)
+        "X-Master-Key": "$2a$10$FvoTg452fwA4QAw4/b1IBO8zW9uW6GkTeKn6oK3L3vdaxVysBmWv6",   // <-- вставь свой ключ
+        "X-Bin-Private": "false"          // публичный: чтение без ключа
       },
-      body: JSON.stringify(stateObj)
+      body: raw
     });
 
     if (!res.ok) {
       const txt = await res.text();
-      console.error("JSONBin error:", res.status, txt);
+      console.error('JSONBin error:', res.status, txt);
       alert(`Ошибка при создании ссылки (код ${res.status}).`);
       return;
     }
 
     const data = await res.json();
-    const id = data && data.metadata && data.metadata.id;
+    const id = data?.metadata?.id;
     if (!id) {
-      console.error("No id in response:", data);
-      alert("Ошибка: сервер не вернул id.");
+      console.error('No id in response:', data);
+      alert('Ошибка: сервер не вернул id.');
       return;
     }
 
     const link = `${location.origin}${location.pathname}#id=${id}`;
-    try {
-      await navigator.clipboard.writeText(link);
-      alert("Ссылка скопирована в буфер обмена!");
-    } catch {
-      prompt("Скопируйте ссылку:", link);
-    }
+    try { await navigator.clipboard.writeText(link); alert('Ссылка скопирована в буфер обмена!'); }
+    catch { prompt('Скопируйте ссылку:', link); }
   } catch (err) {
-    console.error("Network error:", err);
-    alert("Ошибка сети при создании ссылки.");
+    console.error('Network error:', err);
+    alert('Ошибка сети при создании ссылки.');
   }
 }
 // === DOM refs ===
@@ -441,6 +482,7 @@ layoutToEmpty();
       console.warn("Share state load error:", e);
     });
 })();
+
 
 
 
