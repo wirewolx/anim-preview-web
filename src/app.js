@@ -286,54 +286,37 @@ assetFileInput.addEventListener('change', async e=>{
   assetFileInput.value='';
 });
 
-// фон
-bgFileInput.addEventListener('change', async e=>{
-  const f=e.target.files?.[0]; if(!f) return;
-  const url=await readFileAsDataURL(f);
-  bgLayer.style.backgroundImage=`url("${url}")`;
-  clearLottie();
-  bgFileInput.value='';
-  if(!framedMode) layoutToBaseFrame();
-});
+// фон (мгновенная компрессия в WebP при загрузке)
+bgFileInput.addEventListener('change', async (e) => {
+  const f = e.target.files?.[0];
+  if (!f) return;
 
-window.addEventListener('paste', async e=>{
-  const items=e.clipboardData?.items||[];
-  for(const it of items){
-    if(it.type==='image/svg+xml'){
-      const f=it.getAsFile();
-      if(f){
-        clearLottie();
-        mountSVG(await readFileAsText(f));
-        e.preventDefault();
-        return;
-      }
-    }
-  }
-  const text=e.clipboardData?.getData('text/plain');
-  if(text && /<svg[\s>]/i.test(text)){
+  try {
+    // 1) читаем выбранный файл как dataURL
+    const raw = await readFileAsDataURL(f);
+
+    // 2) сразу сжимаем (при необходимости подкрути размеры/качество)
+    const compressed = await compressDataUrlToWebP(
+      raw,
+      1280,  // max ширина
+      1280,  // max высота
+      0.75   // качество (0..1)
+    );
+
+    // 3) ставим УЖЕ сжатый фон
+    bgLayer.style.backgroundImage = `url("${compressed}")`;
+
+    // 4) прочистка + перевод в рамочный режим, как было
     clearLottie();
-    mountSVG(text);
-    e.preventDefault();
-    return;
-  }
-  if(text && (text.startsWith('data:image/') || /^(https?:\/\/).+\.(png|jpe?g|webp|gif)(\?.*)?$/i.test(text)) ){
-    clearLottie();
-    await mountForegroundImage(text);
-    e.preventDefault();
-    return;
-  }
-  for(const it of items){
-    if(it.kind==='file' && it.type.startsWith('image/')){
-      const f=it.getAsFile();
-      const dataURL=await readFileAsDataURL(f);
-      clearLottie();
-      await mountForegroundImage(dataURL);
-      e.preventDefault();
-      return;
-    }
+    if (!framedMode) layoutToBaseFrame();
+  } catch (err) {
+    console.error('BG compress error:', err);
+    alert('Не удалось сжать фоновое изображение.');
+  } finally {
+    // сбрасываем инпут, чтобы можно было сразу выбрать тот же файл снова
+    bgFileInput.value = '';
   }
 });
-
 /* ===== Lottie load / drag / resize / delete ===== */
 lottieFileInput.addEventListener('change', e=>{
   const f=e.target.files?.[0]; if(!f) return;
@@ -482,6 +465,7 @@ layoutToEmpty();
       console.warn("Share state load error:", e);
     });
 })();
+
 
 
 
