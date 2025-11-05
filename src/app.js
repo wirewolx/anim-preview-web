@@ -30,14 +30,26 @@ async function shareCreateLink() {
     mount: getMountState(),
     lottie: animation ? { data: animation.animationData || null, rect: getLottieRect() } : null
   };
-  const json = JSON.stringify(stateObj);
-  const encoded = window.LZString.compressToEncodedURIComponent(json);
-  const link = `${location.origin}${location.pathname}#s=${encoded}`;
+
   try {
+    const res = await fetch("https://api.jsonbin.io/v3/b", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Master-Key": "$2a$10$FvoTg452fwA4QAw4/b1IBO8zW9uW6GkTeKn6oK3L3vdaxVysBmWv6" // ← вставь свой ключ сюда
+      },
+      body: JSON.stringify(stateObj)
+    });
+
+    const data = await res.json();
+    const id = data.metadata.id;
+    const link = `${location.origin}${location.pathname}#id=${id}`;
+
     await navigator.clipboard.writeText(link);
-    alert('Ссылка скопирована в буфер обмена!');
-  } catch {
-    prompt('Скопируйте ссылку:', link);
+    alert("Ссылка скопирована в буфер обмена!");
+  } catch (err) {
+    console.error(err);
+    alert("Ошибка при создании ссылки.");
   }
 }
 
@@ -71,16 +83,12 @@ function resetLottieUI(){
   document.body.style.cursor='';
   window.getSelection?.().removeAllRanges?.();
 }
-
-// ★ полный сброс прямоугольника лотти
 function resetLottieRectToDefaults(){
   lottieWrap.style.left = '40px';
   lottieWrap.style.top = '40px';
   lottieWrap.style.width = '200px';
   lottieWrap.style.height = '200px';
 }
-
-// усиленная очистка Lottie
 function clearLottie(){
   if (animation) { animation.destroy(); animation = null; }
   lottieContainer.innerHTML = '';
@@ -89,7 +97,6 @@ function clearLottie(){
   lottieWrap.classList.add('hidden');
   lottieFileInput.value = '';
 }
-
 function parseNumberWithUnits(v){ if(v==null) return null; const n=parseFloat(String(v).replace(',','.')); return isFinite(n)?n:null; }
 function ensureViewBox(svg){ if(!svg.getAttribute('viewBox')){ const w=parseNumberWithUnits(svg.getAttribute('width')); const h=parseNumberWithUnits(svg.getAttribute('height')); if(w&&h) svg.setAttribute('viewBox',`0 0 ${w} ${h}`);} }
 function getSvgIntrinsicSize(svg){
@@ -356,50 +363,56 @@ window.addEventListener('resize', ()=>{ if(framedMode) layoutToBaseFrame(); });
 // старт
 setDesktopBase();
 layoutToEmpty();
+
 (async function loadFromHashIfAny() {
   const h = location.hash || "";
-  if (!h.startsWith('#s=')) return;
+  if (!h.startsWith("#id=")) return;
+  const id = h.slice(4);
+
   try {
-    const encoded = h.slice(3);
-    const json = window.LZString.decompressFromEncodedURIComponent(encoded);
-    if (!json) return;
-    const stateObj = JSON.parse(json);
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${id}/latest`, {
+      headers: { "X-Master-Key": "$2a$10$FvoTg452fwA4QAw4/b1IBO8zW9uW6GkTeKn6oK3L3vdaxVysBmWv6" } // ← тот же ключ
+    });
+    const { record: stateObj } = await res.json();
 
     if (stateObj.bg) {
       bgLayer.style.backgroundImage = `url("${stateObj.bg}")`;
     }
 
     if (stateObj.mount) {
-      if (stateObj.mount.type === 'img') {
+      if (stateObj.mount.type === "img") {
         await mountForegroundImage(stateObj.mount.data);
-      } else if (stateObj.mount.type === 'svg') {
+      } else if (stateObj.mount.type === "svg") {
         mountSVG(stateObj.mount.data);
       }
-    } else {
-      if (!framedMode) layoutToBaseFrame();
+    } else if (!framedMode) {
+      layoutToBaseFrame();
     }
 
     if (stateObj.lottie && stateObj.lottie.data) {
-      lottieWrap.classList.remove('hidden');
+      lottieWrap.classList.remove("hidden");
       if (!framedMode) layoutToBaseFrame();
-      if (animation) { animation.destroy(); animation = null; }
-      lottieContainer.innerHTML = '';
+      if (animation) {
+        animation.destroy();
+        animation = null;
+      }
+      lottieContainer.innerHTML = "";
       animation = lottie.loadAnimation({
         container: lottieContainer,
-        renderer: 'svg',
+        renderer: "svg",
         loop: true,
         autoplay: true,
         animationData: stateObj.lottie.data
       });
       const r = stateObj.lottie.rect || {};
-      if (typeof r.left === 'number')  lottieWrap.style.left = `${r.left}px`;
-      if (typeof r.top === 'number')   lottieWrap.style.top = `${r.top}px`;
-      if (typeof r.width === 'number') lottieWrap.style.width = `${r.width}px`;
-      if (typeof r.height === 'number')lottieWrap.style.height = `${r.height}px`;
+      if (r.left) lottieWrap.style.left = `${r.left}px`;
+      if (r.top) lottieWrap.style.top = `${r.top}px`;
+      if (r.width) lottieWrap.style.width = `${r.width}px`;
+      if (r.height) lottieWrap.style.height = `${r.height}px`;
     }
 
     if (!framedMode) layoutToBaseFrame();
   } catch (e) {
-    console.warn('Share state parse error:', e);
+    console.warn("Share state load error:", e);
   }
 })();
