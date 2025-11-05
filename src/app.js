@@ -22,9 +22,7 @@ function getLottieRect() {
     height: parseFloat(s.height) || 200
   };
 }
-
 // === image compress helper (WebP) ===
-// базовая функция сжатия
 async function compressDataUrlToWebP(dataURL, maxW = 1280, maxH = 1280, quality = 0.75) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -32,103 +30,59 @@ async function compressDataUrlToWebP(dataURL, maxW = 1280, maxH = 1280, quality 
       let { width, height } = img;
       const k = Math.min(1, maxW / width, maxH / height);
       if (k < 1) { width = Math.round(width * k); height = Math.round(height * k); }
+
       const canvas = document.createElement('canvas');
-      canvas.width = width; canvas.height = height;
+      canvas.width = width;
+      canvas.height = height;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/webp', quality));
+      const out = canvas.toDataURL('image/webp', quality);
+      resolve(out);
     };
     img.onerror = reject;
     img.src = dataURL;
   });
 }
-
-// многоступенчатое сжатие (чтобы вписаться в лимит jsonbin)
-async function compressMulti(dataURL) {
-  const profiles = [
-    { w: 1280, h: 1280, q: 0.75 },
-    { w: 960,  h: 960,  q: 0.60 },
-    { w: 720,  h: 720,  q: 0.50 },
-  ];
-  let out = dataURL;
-  for (const p of profiles) {
-    out = await compressDataUrlToWebP(out, p.w, p.h, p.q);
-    const size = new Blob([out]).size;
-    if (size < 80 * 1024) break; // целимся <80KB для запаса
-  }
-  return out;
-}
-
-function approxJsonSize(obj) {
-  try { return new Blob([JSON.stringify(obj)]).size; }
-  catch { return Infinity; }
-}
-
-// === SHARE: создаём короткую ссылку (jsonbin), Lottie — всегда по URL ===
 async function shareCreateLink() {
   // 1) собираем состояние
   let bg = getBgUrl() || null;
   let mountState = getMountState();
 
-  // 2) Lottie — ВСЕГДА по URL (не храним JSON внутри)
-  let lottieState = null;
-  if (animation) {
-    const rect = getLottieRect();
-    const url = prompt('Вставьте URL на ваш Lottie JSON (RAW GitHub/Gist/LottieFiles CDN):');
-    if (!url) { alert('Без URL для Lottie поделиться нельзя.'); return; }
-    lottieState = { url, rect };
-  }
-
-  // 3) Сжатие картинок (фон и foreground IMG) — многоступенчато
+  // 2) сжимаем фон, если это dataURL
   if (bg && bg.startsWith('data:image/')) {
-    try { bg = await compressMulti(bg); } catch {}
-  }
-  if (mountState && mountState.type === 'img' && mountState.data && mountState.data.startsWith('data:image/')) {
-    try { mountState = { ...mountState, data: await compressMulti(mountState.data) }; } catch {}
+    try { bg = await compressDataUrlToWebP(bg, 1280, 1280, 0.75); } catch {}
   }
 
-  // 4) формируем объект для сохранения
-  let stateObj = {
+  // 3) сжимаем foreground IMG, если это dataURL
+  if (mountState && mountState.type === 'img' && mountState.data && mountState.data.startsWith('data:image/')) {
+    try { mountState = { ...mountState, data: await compressDataUrlToWebP(mountState.data, 1280, 1280, 0.75) }; } catch {}
+  }
+
+  const stateObj = {
     mode: MODE,
     base: { w: BASE_W, h: BASE_H },
     bg,
     mount: mountState,
-    lottie: lottieState
+    lottie: animation ? { data: animation.animationData || null, rect: getLottieRect() } : null
   };
 
-  // 5) если всё ещё >100KB — предлагаем заменить картинки на URL
-  let raw = JSON.stringify(stateObj);
-  let bytes = new Blob([raw]).size;
-
+  // 4) проверяем лимит jsonbin free (100 KB)
+  const raw = JSON.stringify(stateObj);
+  const bytes = new Blob([raw]).size;
   if (bytes > 100 * 1024) {
-    // фон → URL
-    if (stateObj.bg && typeof stateObj.bg === 'string' && stateObj.bg.startsWith('data:image/')) {
-      const bgUrl = prompt('Сцена большая. Вставьте URL фонового изображения (RAW GitHub/хостинг), иначе удалим фон:');
-      stateObj.bg = bgUrl || null;
-    }
-    // foreground img → URL
-    if (stateObj.mount && stateObj.mount.type === 'img' && stateObj.mount.data && stateObj.mount.data.startsWith('data:image/')) {
-      const imgUrl = prompt('Сцена большая. Вставьте URL foreground-изображения (RAW GitHub/хостинг), иначе удалим картинку:');
-      stateObj.mount = imgUrl ? { type: 'img', data: imgUrl } : null;
-    }
-    raw = JSON.stringify(stateObj);
-    bytes = new Blob([raw]).size;
-  }
-
-  if (bytes > 100 * 1024) {
-    alert(`Даже после сжатия сцена ${Math.round(bytes/1024)} KB > 100 KB (лимит jsonbin Free).
-Варианты: ещё уменьшить изображения / использовать URL / временно убрать фон.`);
+    alert(`Сцена ${Math.round(bytes/1024)} KB — больше лимита 100 KB (jsonbin Free).
+Сделай фон/картинку меньше, снизь качество, или облегчи Lottie.`);
     return;
   }
 
-  // 6) отправляем в jsonbin (публичный bin: чтение без ключа)
+  // 5) отправляем в jsonbin (публичный bin)
   try {
     const res = await fetch("https://api.jsonbin.io/v3/b", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Master-Key": "$2a$10$FvoTg452fwA4QAw4/b1IBO8zW9uW6GkTeKn6oK3L3vdaxVysBmWv6",   // <- вставь свой ключ
-        "X-Bin-Private": "false"
+        "X-Master-Key": "$2a$10$FvoTg452fwA4QAw4/b1IBO8zW9uW6GkTeKn6oK3L3vdaxVysBmWv6",   // <-- вставь свой ключ
+        "X-Bin-Private": "false"          // публичный: чтение без ключа
       },
       body: raw
     });
@@ -156,7 +110,6 @@ async function shareCreateLink() {
     alert('Ошибка сети при создании ссылки.');
   }
 }
-
 // === DOM refs ===
 const dropzone = document.getElementById('dropzone');
 const controls = document.getElementById('controls');
@@ -468,8 +421,8 @@ window.addEventListener('resize', ()=>{ if(framedMode) layoutToBaseFrame(); });
 setDesktopBase();
 layoutToEmpty();
 
-// загрузка состояния по короткой ссылке #id=...
 (function () {
+  // самовызывающаяся функция без async — внутри используем промисы
   const h = location.hash || "";
   if (!h.startsWith("#id=")) return;
   const id = h.slice(4);
@@ -503,38 +456,24 @@ layoutToEmpty();
         layoutToBaseFrame();
       }
 
-      // lottie (поддержка data и url; предпочитаем url)
-      if (stateObj.lottie) {
+      // lottie
+      if (stateObj.lottie && stateObj.lottie.data) {
         lottieWrap.classList.remove("hidden");
         if (!framedMode) layoutToBaseFrame();
         if (animation) { animation.destroy(); animation = null; }
         lottieContainer.innerHTML = "";
-
+        animation = lottie.loadAnimation({
+          container: lottieContainer,
+          renderer: "svg",
+          loop: true,
+          autoplay: true,
+          animationData: stateObj.lottie.data
+        });
         const r = stateObj.lottie.rect || {};
-        if (r.left  != null) lottieWrap.style.left   = `${r.left}px`;
-        if (r.top   != null) lottieWrap.style.top    = `${r.top}px`;
-        if (r.width != null) lottieWrap.style.width  = `${r.width}px`;
-        if (r.height!= null) lottieWrap.style.height = `${r.height}px`;
-
-        if (stateObj.lottie.data) {
-          animation = lottie.loadAnimation({
-            container: lottieContainer, renderer: "svg", loop: true, autoplay: true,
-            animationData: stateObj.lottie.data
-          });
-        } else if (stateObj.lottie.url) {
-          try {
-            const resp = await fetch(stateObj.lottie.url, { cache: 'no-store' });
-            if (!resp.ok) throw new Error('Lottie URL load ' + resp.status);
-            const json = await resp.json();
-            animation = lottie.loadAnimation({
-              container: lottieContainer, renderer: "svg", loop: true, autoplay: true,
-              animationData: json
-            });
-          } catch (e) {
-            console.warn('Не удалось загрузить Lottie по URL:', e);
-            alert('Не удалось загрузить Lottie по указанному URL.');
-          }
-        }
+        if (r.left != null)   lottieWrap.style.left = `${r.left}px`;
+        if (r.top  != null)   lottieWrap.style.top  = `${r.top}px`;
+        if (r.width!= null)   lottieWrap.style.width = `${r.width}px`;
+        if (r.height!= null)  lottieWrap.style.height= `${r.height}px`;
       }
 
       if (!framedMode) layoutToBaseFrame();
@@ -543,3 +482,6 @@ layoutToEmpty();
       console.warn("Share state load error:", e);
     });
 })();
+
+
+
