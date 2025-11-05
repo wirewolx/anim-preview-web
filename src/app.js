@@ -1,4 +1,44 @@
 const lottie = window.lottie;
+    // SHARE helpers
+    function getBgUrl() {
+      const v = bgLayer.style.backgroundImage || "";
+      const m = v.match(/^url\(["']?(.*)["']?\)$/);
+      return m ? m[1] : "";
+    }
+    function getMountState() {
+      const node = mount.firstElementChild;
+      if (!node) return null;
+      if (node.tagName === 'IMG') return { type: 'img', data: node.src };
+      if (node.tagName === 'SVG') return { type: 'svg', data: node.outerHTML };
+      return null;
+    }
+    function getLottieRect() {
+      const s = getComputedStyle(lottieWrap);
+      return {
+        left: parseFloat(s.left) || 0,
+        top: parseFloat(s.top) || 0,
+        width: parseFloat(s.width) || 200,
+        height: parseFloat(s.height) || 200
+      };
+    }
+    async function shareCreateLink() {
+      const stateObj = {
+        mode: MODE,
+        base: { w: BASE_W, h: BASE_H },
+        bg: getBgUrl() || null,
+        mount: getMountState(),
+        lottie: animation ? { data: animation.animationData || null, rect: getLottieRect() } : null
+      };
+      const json = JSON.stringify(stateObj);
+      const encoded = window.LZString.compressToEncodedURIComponent(json);
+      const link = `${location.origin}${location.pathname}#s=${encoded}`;
+      try {
+        await navigator.clipboard.writeText(link);
+        alert('Ссылка скопирована в буфер обмена!');
+      } catch {
+        prompt('Скопируйте ссылку:', link);
+      }
+    }
     const dropzone = document.getElementById('dropzone');
     const controls = document.getElementById('controls');
     const bgFileInput = document.getElementById('bgFile');
@@ -317,6 +357,7 @@ const lottie = window.lottie;
 
     lottieClose.addEventListener('click', ()=>{ clearLottie(); });
     /* overlay */
+    document.getElementById('btnShare').addEventListener('click', shareCreateLink);
     document.getElementById('btnClear').addEventListener('click', ()=>{
       clearMount();
       clearLottie();                 // вместо ручной чистки
@@ -329,4 +370,56 @@ const lottie = window.lottie;
 
     /* стартуем пустыми */
     setDesktopBase();
+    async function loadFromHashIfAny() {
+  const h = location.hash || "";
+  if (!h.startsWith('#s=')) return;
+  try {
+    const encoded = h.slice(3);
+    const json = window.LZString.decompressFromEncodedURIComponent(encoded);
+    if (!json) return;
+    const stateObj = JSON.parse(json);
+
+    // фон
+    if (stateObj.bg) {
+      bgLayer.style.backgroundImage = `url("${stateObj.bg}")`;
+    }
+
+    // foreground
+    if (stateObj.mount) {
+      if (stateObj.mount.type === 'img') {
+        await mountForegroundImage(stateObj.mount.data);
+      } else if (stateObj.mount.type === 'svg') {
+        mountSVG(stateObj.mount.data);
+      }
+    } else {
+      if (!framedMode) layoutToBaseFrame();
+    }
+
+    // lottie
+    if (stateObj.lottie && stateObj.lottie.data) {
+      lottieWrap.classList.remove('hidden');
+      if (!framedMode) layoutToBaseFrame();
+      if (animation) { animation.destroy(); animation = null; }
+      lottieContainer.innerHTML = '';
+      animation = lottie.loadAnimation({
+        container: lottieContainer,
+        renderer: 'svg',
+        loop: true,
+        autoplay: true,
+        animationData: stateObj.lottie.data
+      });
+      const r = stateObj.lottie.rect || {};
+      if (typeof r.left === 'number')  lottieWrap.style.left = `${r.left}px`;
+      if (typeof r.top === 'number')   lottieWrap.style.top = `${r.top}px`;
+      if (typeof r.width === 'number') lottieWrap.style.width = `${r.width}px`;
+      if (typeof r.height === 'number')lottieWrap.style.height = `${r.height}px`;
+    }
+
+    if (!framedMode) layoutToBaseFrame();
+  } catch (e) {
+    console.warn('Share state parse error:', e);
+  }
+}
+loadFromHashIfAny();
+
     layoutToEmpty();
