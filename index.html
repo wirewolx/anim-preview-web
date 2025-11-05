@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>Browser UI — desktop+mobile detection</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.10.0/lottie.min.js"></script>
+  <link rel="stylesheet" href="./src/styles/main.css" />
+</head>
+<body>
+
+  <!-- Пустая область до первой вставки -->
+  <div id="dropzone" title="Нажмите, чтобы выбрать файл. Также работает Ctrl+V.">
+    <div class="hint">
+      Кликните, чтобы выбрать изображение или SVG<br/>
+      или нажмите <span class="kbd">Ctrl</span>+<span class="kbd">V</span>.
+    </div>
+  </div>
+
+  <!-- Левая панель: фон и лотти -->
+  <div id="controls">
+    <input type="file" id="bgFile"     accept="image/png,image/jpeg,image/webp,image/gif" />
+    <input type="file" id="assetFile"  accept=".svg,image/svg+xml,image/png,image/jpeg,image/webp,image/gif" />
+    <input type="file" id="lottieFile" accept=".json" />
+
+    <label class="btn" for="assetFile">Загрузить картинку/SVG</label>
+    <label class="btn primary" for="lottieFile">Загрузить Lottie JSON</label>
+  </div>
+
+  <!-- Браузер -->
+  <div class="browser" id="browser">
+    <div class="chrome">
+      <div class="traffic">
+        <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+      </div>
+      <div class="tab" id="tabTitle">Design Preview</div>
+      <div class="omnibox" id="omnibox">https://preview.local/</div>
+    </div>
+
+    <div id="stage">
+      <div id="bgLayer"></div>
+      <div id="svgMount"></div>
+
+      <div class="lottie-wrap hidden" id="lottieWrap">
+        <div class="lottie-close" id="lottieClose" title="Удалить">✕</div>
+        <div class="handle nw"></div><div class="handle ne"></div>
+        <div class="handle sw"></div><div class="handle se"></div>
+        <div class="handle n"></div><div class="handle s"></div>
+        <div class="handle w"></div><div class="handle e"></div>
+        <div id="lottie"></div>
+      </div>
+
+      <div class="overlay">
+        <button id="btnClear">Очистить</button>
+      </div>
+    </div>
+  </div>
+<script defer src="./src/app.js"></script>
+</body>
+</html>
