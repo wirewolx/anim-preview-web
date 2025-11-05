@@ -1,0 +1,175 @@
+
+    * { box-sizing: border-box; }
+    :root {
+      --chrome-h: 64px;
+      --radius: 14px;
+      --gutter: 32px;
+      --sidebar-w: 220px; /* ширина левой панели с кнопками */
+      --btn-bg: rgba(255,255,255,0.08);
+      --btn-border: rgba(255,255,255,0.18);
+      --btn-hover: rgba(255,255,255,0.14);
+      --primary: #0a84ff;
+    }
+    body {
+      margin: 0;
+      height: 100vh;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      color: #fff;
+      background: #222;
+      overflow: hidden;
+    }
+
+    /* Пустая область до вставки */
+    #dropzone {
+      position: fixed; inset: 0;
+      display: grid; place-items: center;
+      border: 2px dashed rgba(255,255,255,0.2);
+      cursor: pointer; user-select: none;
+    }
+    #dropzone:hover { border-color: rgba(255,255,255,0.35); }
+    #dropzone .hint {
+      text-align: center; color: #bbb; line-height: 1.5; font-size: 16px;
+      padding: 24px 28px; border-radius: 12px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    #dropzone .kbd {
+      font: 600 12px/1.8 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      padding: 2px 6px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2);
+      background: rgba(255,255,255,0.06); color: #ddd; margin: 0 2px; display: inline-block;
+    }
+
+    /* Левая колонка с кнопками — показываем после вставки изображения */
+    #controls {
+      position: fixed;
+      top: var(--gutter);
+      left: var(--gutter);
+      width: var(--sidebar-w);
+      display: none;                   /* hidden until framedMode */
+      flex-direction: column;
+      gap: 10px;
+      z-index: 10000;
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(255,255,255,0.12);
+      backdrop-filter: blur(8px);
+    }
+    /* скрываем сами <input>, кликаем по label-кнопкам */
+    #controls input[type="file"] { display: none; }
+    .btn {
+      display: flex; align-items: center; justify-content: center;
+      gap: 8px;
+      height: 36px; padding: 0 12px;
+      border-radius: 10px;
+      background: var(--btn-bg);
+      border: 1px solid var(--btn-border);
+      color: #eee; font-size: 13px; cursor: pointer;
+      transition: background .15s ease, border-color .15s ease, transform .02s ease;
+      user-select: none;
+    }
+    .btn:hover { background: var(--btn-hover); border-color: rgba(255,255,255,0.28); }
+    .btn:active { transform: translateY(1px); }
+    .btn.primary { background: rgba(10,132,255,0.18); border-color: rgba(10,132,255,0.5); }
+    .btn.primary:hover { background: rgba(10,132,255,0.28); }
+
+    /* Браузер — сдвинут вправо на ширину панели + небольшой отступ */
+    .browser {
+      position: fixed;
+      top: var(--gutter);
+      left: calc(var(--gutter) + var(--sidebar-w) + 16px);
+      right: var(--gutter);
+      bottom: var(--gutter);
+      display: none;
+      flex-direction: column;
+      background: transparent;
+      border: 1px solid #ddd;
+      border-radius: var(--radius);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+      overflow: hidden;
+      transition: border-radius .2s ease, box-shadow .2s ease, border-color .2s ease; /* ★ */
+    }
+
+    /* ★ mobile phone frame */
+    .browser.mobile {
+      border-radius: 36px;
+      border-color: rgba(255,255,255,0.18);
+      box-shadow:
+        0 0 0 6px rgba(0,0,0,0.35),
+        0 8px 30px rgba(0,0,0,0.4);
+      background: rgba(0,0,0,0.12);
+    }
+    .browser.mobile .chrome { display: none; }       /* спрятали «шапку» браузера для телефона */
+    .browser.mobile #stage { border-radius: 30px; }  /* чуть скруглить контент внутри */
+
+    .chrome {
+      height: var(--chrome-h);
+      padding: 10px 14px;
+      background: rgba(0,0,0,0.25);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid rgba(255,255,255,0.15);
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 12px;
+      align-items: center;
+      color: #fff;
+      position: relative;
+      z-index: 5;
+      flex-shrink: 0;
+    }
+    .traffic { display: flex; gap: 8px; align-items: center; }
+    .dot { width: 12px; height: 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.2); }
+    .dot.red { background: #ff5f56; } .dot.yellow { background: #ffbd2e; } .dot.green { background: #27c93f; }
+    .tab, .omnibox {
+      height: 34px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 10px; padding: 0 10px; display: flex; align-items: center; color: #ddd; font-size: 13px;
+    }
+    .tab { padding: 6px 10px; gap: 8px; font-size: 14px; color: #fff; }
+
+    /* Сцена */
+    #stage {
+      position: relative; flex: 1 1 auto; width: 100%; height: auto;
+      overflow: hidden; background: transparent; display: flex; align-items: stretch; justify-content: center;
+    }
+    #bgLayer { position: absolute; inset: 0; background-size: cover; background-position: top center; background-repeat: no-repeat; z-index: 0; }
+    #svgMount { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; }
+    #svgMount img, #svgMount svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    #svgMount img { object-fit: cover; object-position: top center; }
+   /* #svgMount svg { preserveAspectRatio: xMidYMin slice; } */ 
+
+    /* Lottie */
+    .lottie-wrap {
+      position: absolute; top: 40px; left: 40px;
+      width: 200px; height: 200px; z-index: 3; cursor: grab;
+      outline: 1px dashed rgba(255,255,255,0.2); border-radius: 6px;
+    }
+    .lottie-wrap.hidden { display: none; }
+    .lottie-wrap.active, .lottie-wrap:hover { outline-color: rgba(255,255,255,0.45); }
+    #lottie { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .lottie-close {
+      position: absolute; top: -10px; right: -10px; width: 22px; height: 22px; border-radius: 999px;
+      display: grid; place-items: center; background: rgba(0,0,0,0.65); color: #fff; font-size: 14px;
+      border: 1px solid rgba(255,255,255,0.45); cursor: pointer; opacity: 0; transition: opacity .15s ease; z-index: 1;
+    }
+    .lottie-wrap:hover .lottie-close, .lottie-wrap.active .lottie-close { opacity: 1; }
+    .handle { position: absolute; width: 12px; height: 12px; background: rgba(255,255,255,0.9); border: 1px solid rgba(0,0,0,0.4); border-radius: 3px; opacity: 0; transition: opacity .15s ease; }
+    .lottie-wrap:hover .handle, .lottie-wrap.active .handle { opacity: 1; }
+    .handle.nw { top: -6px; left: -6px;  cursor: nwse-resize; }
+    .handle.ne { top: -6px; right: -6px; cursor: nesw-resize; }
+    .handle.sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
+    .handle.se { bottom: -6px; right: -6px; cursor: nwse-resize; }
+    .handle.n  { top: -6px; left: calc(50% - 6px); cursor: ns-resize; }
+    .handle.s  { bottom: -6px; left: calc(50% - 6px); cursor: ns-resize; }
+    .handle.w  { left: -6px; top: calc(50% - 6px); cursor: ew-resize; }
+    .handle.e  { right: -6px; top: calc(50% - 6px); cursor: ew-resize; }
+
+    .overlay {
+      position: absolute; bottom: 16px; left: 16px;
+      background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 10px; padding: 8px 10px; display: flex; gap: 8px; z-index: 4; backdrop-filter: blur(6px);
+    }
+    .overlay button {
+      background: rgba(0,122,255,0.9); color: #fff; border: 0; border-radius: 8px; padding: 6px 10px;
+      cursor: pointer; font-size: 13px;
+    }
+    .overlay button:hover { background: rgba(0,122,255,1); }
