@@ -36,37 +36,39 @@ async function shareCreateLink() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Master-Key": "$2a$10$FvoTg452fwA4QAw4/b1IBO8zW9uW6GkTeKn6oK3L3vdaxVysBmWv6",   // ← сюда твой ключ
-        "X-Bin-Private": "false"          // ← делаем бин публичным (читать можно без ключа)
+        "X-Master-Key": "$2a$10$FvoTg452fwA4QAw4/b1IBO8zW9uW6GkTeKn6oK3L3vdaxVysBmWv6",  // <- вставь свой ключ
+        "X-Bin-Private": "false"         // бин публичный (читать без ключа)
       },
       body: JSON.stringify(stateObj)
     });
 
-    // проверка ответа и вывод причины в консоль
     if (!res.ok) {
       const txt = await res.text();
-      console.error('JSONBin error:', res.status, txt);
+      console.error("JSONBin error:", res.status, txt);
       alert(`Ошибка при создании ссылки (код ${res.status}).`);
       return;
     }
 
     const data = await res.json();
-    const id = data?.metadata?.id;   // <- берём короткий id
+    const id = data && data.metadata && data.metadata.id;
     if (!id) {
-      console.error('No id in response:', data);
-      alert('Ошибка: сервер не вернул id.');
+      console.error("No id in response:", data);
+      alert("Ошибка: сервер не вернул id.");
       return;
     }
 
     const link = `${location.origin}${location.pathname}#id=${id}`;
-    await navigator.clipboard.writeText(link);
-    alert("Ссылка скопирована в буфер обмена!");
+    try {
+      await navigator.clipboard.writeText(link);
+      alert("Ссылка скопирована в буфер обмена!");
+    } catch {
+      prompt("Скопируйте ссылку:", link);
+    }
   } catch (err) {
-    console.error(err);
+    console.error("Network error:", err);
     alert("Ошибка сети при создании ссылки.");
   }
 }
-
 // === DOM refs ===
 const dropzone = document.getElementById('dropzone');
 const controls = document.getElementById('controls');
@@ -378,55 +380,67 @@ window.addEventListener('resize', ()=>{ if(framedMode) layoutToBaseFrame(); });
 setDesktopBase();
 layoutToEmpty();
 
-(async function loadFromHashIfAny() {
+(function () {
+  // самовызывающаяся функция без async — внутри используем промисы
   const h = location.hash || "";
   if (!h.startsWith("#id=")) return;
   const id = h.slice(4);
 
-  try {
-    const res = await fetch(`https://api.jsonbin.io/v3/b/${id}/latest`);
-    });
-    const { record: stateObj } = await res.json();
-
-    if (stateObj.bg) {
-      bgLayer.style.backgroundImage = `url("${stateObj.bg}")`;
-    }
-
-    if (stateObj.mount) {
-      if (stateObj.mount.type === "img") {
-        await mountForegroundImage(stateObj.mount.data);
-      } else if (stateObj.mount.type === "svg") {
-        mountSVG(stateObj.mount.data);
+  fetch(`https://api.jsonbin.io/v3/b/${id}/latest`)
+    .then(async (res) => {
+      if (!res.ok) {
+        const txt = await res.text();
+        console.warn("Load error:", res.status, txt);
+        return null;
       }
-    } else if (!framedMode) {
-      layoutToBaseFrame();
-    }
+      return res.json();
+    })
+    .then(async (payload) => {
+      if (!payload) return;
+      const stateObj = payload.record;
 
-    if (stateObj.lottie && stateObj.lottie.data) {
-      lottieWrap.classList.remove("hidden");
+      // фон
+      if (stateObj.bg) {
+        bgLayer.style.backgroundImage = `url("${stateObj.bg}")`;
+      }
+
+      // foreground
+      if (stateObj.mount) {
+        if (stateObj.mount.type === "img") {
+          await mountForegroundImage(stateObj.mount.data);
+        } else if (stateObj.mount.type === "svg") {
+          mountSVG(stateObj.mount.data);
+        }
+      } else if (!framedMode) {
+        layoutToBaseFrame();
+      }
+
+      // lottie
+      if (stateObj.lottie && stateObj.lottie.data) {
+        lottieWrap.classList.remove("hidden");
+        if (!framedMode) layoutToBaseFrame();
+        if (animation) { animation.destroy(); animation = null; }
+        lottieContainer.innerHTML = "";
+        animation = lottie.loadAnimation({
+          container: lottieContainer,
+          renderer: "svg",
+          loop: true,
+          autoplay: true,
+          animationData: stateObj.lottie.data
+        });
+        const r = stateObj.lottie.rect || {};
+        if (r.left != null)   lottieWrap.style.left = `${r.left}px`;
+        if (r.top  != null)   lottieWrap.style.top  = `${r.top}px`;
+        if (r.width!= null)   lottieWrap.style.width = `${r.width}px`;
+        if (r.height!= null)  lottieWrap.style.height= `${r.height}px`;
+      }
+
       if (!framedMode) layoutToBaseFrame();
-      if (animation) {
-        animation.destroy();
-        animation = null;
-      }
-      lottieContainer.innerHTML = "";
-      animation = lottie.loadAnimation({
-        container: lottieContainer,
-        renderer: "svg",
-        loop: true,
-        autoplay: true,
-        animationData: stateObj.lottie.data
-      });
-      const r = stateObj.lottie.rect || {};
-      if (r.left) lottieWrap.style.left = `${r.left}px`;
-      if (r.top) lottieWrap.style.top = `${r.top}px`;
-      if (r.width) lottieWrap.style.width = `${r.width}px`;
-      if (r.height) lottieWrap.style.height = `${r.height}px`;
-    }
-
-    if (!framedMode) layoutToBaseFrame();
-  } catch (e) {
-    console.warn("Share state load error:", e);
-  }
+    })
+    .catch((e) => {
+      console.warn("Share state load error:", e);
+    });
 })();
+
+
 
