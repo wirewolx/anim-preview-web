@@ -11,15 +11,26 @@ const URL_TOKEN  = new URLSearchParams(location.search).get('share') || null;
 let   SHARE_TOKEN = localStorage.getItem(STORAGE_TOKEN_KEY) || null;
 const isViewer = () => URL_TOKEN && URL_TOKEN !== SHARE_TOKEN;
 
-// ---- Appwrite client ----
+// ---- Appwrite client (создаём ДО любых вызовов) ----
 const awClient  = new Appwrite.Client().setEndpoint(APPWRITE_ENDPOINT).setProject(APPWRITE_PROJECT);
 const awAccount = new Appwrite.Account(awClient);
 const awDB      = new Appwrite.Databases(awClient);
 const awStorage = new Appwrite.Storage(awClient);
 
-// анонимная сессия (без авто-создания share токена)
+// анонимная сессия + авто-создание документа и подмена URL
 (async () => {
   try { await awAccount.get(); } catch { await awAccount.createAnonymousSession(); }
+
+  if (!URL_TOKEN) {
+    try {
+      await ensureShareDoc();                         // создаст и сохранит SHARE_TOKEN при первом заходе
+      if (SHARE_TOKEN) {
+        history.replaceState(null, '', `${location.pathname}?share=${SHARE_TOKEN}`);
+      }
+    } catch (e) {
+      console.error('ensureShareDoc failed', e);
+    }
+  }
 })();
 
 // ====== DOM ======
@@ -54,91 +65,7 @@ let openedFromShare = false;
 let sharedRectNorm  = null;
 let rectNormLive    = null;
 
-// ====== undo snapshot (состояние "до загрузки картинки") ======
-let lastSnapshot = null;
-
-function getCurrentProjectSnapshot(){
-  const bgRaw = extractCssUrl(bgLayer.style.backgroundImage);
-
-  // foreground
-  const fgImg = mount.querySelector('img');
-  const fgSvg = mount.querySelector('svg');
-  let foreground = null;
-  if (fgImg) foreground = { type:'image', url: fgImg.src };
-  else if (fgSvg){
-    const svgText = new XMLSerializer().serializeToString(fgSvg);
-    foreground = { type:'svg', svgText };
-  }
-
-  // lottie
-  const lottieRect = (!lottieWrap.classList.contains('hidden'))
-    ? (rectNormLive || computeRectNormFromCurrent())
-    : null;
-
-  return {
-    mode: MODE, baseW: BASE_W, baseH: BASE_H, framedMode,
-    backgroundUrl: bgRaw || null,
-    foreground,
-    lottie: currentLottieJsonText
-      ? { jsonText: currentLottieJsonText, rect: lottieRect, renderer:'svg', loop:true, autoplay:true }
-      : null
-  };
-}
-
-async function restoreProjectSnapshot(snap){
-  if (!snap) return;
-
-  MODE   = snap.mode  || 'desktop';
-  BASE_W = snap.baseW || 1440;
-  BASE_H = snap.baseH || 800;
-  framedMode = !!snap.framedMode;
-
-  setReadOnly(isViewer());
-  bgLayer.style.backgroundImage = snap.backgroundUrl ? `url("${snap.backgroundUrl}")` : '';
-
-  // базовый фрейм/лейаут
-  clearMount(); clearLottie();
-  if (framedMode) layoutToBaseFrame(); else layoutToEmpty();
-
-  if (snap.foreground?.type === 'image' && snap.foreground.url){
-    await mountForegroundImage(snap.foreground.url);
-  } else if (snap.foreground?.type === 'svg' && snap.foreground.svgText){
-    mountSVG(snap.foreground.svgText);
-  }
-
-  if (snap.lottie?.jsonText && snap.lottie?.rect){
-    sharedRectNorm = snap.lottie.rect;
-    rectNormLive   = sharedRectNorm;
-    lottieWrap.classList.remove('hidden');
-    applyLottieRectFromNorm(rectNormLive);
-    animation = lottie.loadAnimation({
-      container: lottieContainer,
-      renderer: snap.lottie.renderer || 'svg',
-      loop:     snap.lottie.loop !== false,
-      autoplay: snap.lottie.autoplay !== false,
-      animationData: JSON.parse(snap.lottie.jsonText)
-    });
-    currentLottieJsonText = snap.lottie.jsonText;
-  }
-
-  updateEditingUIAvailability();
-}
-
-function snapshotBeforeForegroundChange(){
-  // фиксируем состояние только если уже есть что откатывать
-  lastSnapshot = getCurrentProjectSnapshot();
-}
-
 /* ===== helpers ===== */
-function extractCssUrl(v){ if(!v) return null; const m=v.match(/url\(["']?(.*?)["']?\)/i); return m?m[1]:null; }
-function hasBackground() { return !!extractCssUrl(bgLayer.style.backgroundImage); }
-
-function updateEditingUIAvailability() {
-  const enabled = hasBackground() && !READ_ONLY;
-  dropzone.style.display = enabled ? 'grid' : 'none';
-  controls.style.display = enabled ? 'flex' : 'none';
-}
-
 function resetLottieUI(){
   dragging=false; resizing=null;
   lottieWrap.classList.remove('active');
@@ -146,7 +73,6 @@ function resetLottieUI(){
   document.body.style.cursor='';
   window.getSelection?.().removeAllRanges?.();
 }
-
 function setReadOnly(on){
   READ_ONLY = !!on;
   if (controls) controls.style.display = on ? 'none' : 'flex';
@@ -158,14 +84,11 @@ function setReadOnly(on){
 
   const btnShare = document.getElementById('btnShare');
   const btnClear = document.getElementById('btnClear');
-  const btnCreate = document.getElementById('btnCreate');
-  if (btnShare)  btnShare.style.display  = on ? 'none' : 'inline-block';
-  if (btnClear)  btnClear.style.display  = on ? 'none' : 'inline-block';
-  if (btnCreate) btnCreate.style.display = on ? 'none' : 'inline-block';
+  if (btnShare) btnShare.style.display = on ? 'none' : 'inline-block';
+  if (btnClear) btnClear.style.display = on ? 'none' : 'inline-block';
 
   lottieWrap.style.pointerEvents = on ? 'none' : 'auto';
 }
-
 function applyLottieRectFromNorm(rect){
   if (!rect) return;
   const s = stage.getBoundingClientRect();
@@ -329,8 +252,6 @@ dropzone.addEventListener('click', ()=>{ if (READ_ONLY) return; assetFileInput.c
 assetFileInput.addEventListener('change', async e=>{
   if (READ_ONLY) return;
   const f=e.target.files?.[0]; if(!f) return;
-
-  snapshotBeforeForegroundChange(); // <— снимаем снимок до изменения foreground
   clearLottie();
   try{
     if (isSVGFile(f)){
@@ -351,7 +272,6 @@ bgFileInput.addEventListener('change', async e=>{
   const url=await readFileAsDataURL(f);
   bgLayer.style.backgroundImage=`url("${url}")`;
   clearLottie();
-  updateEditingUIAvailability();
   bgFileInput.value='';
 });
 
@@ -362,19 +282,17 @@ window.addEventListener('paste', async e=>{
     if(it.type==='image/svg+xml'){
       const f=it.getAsFile();
       if(f){
-        snapshotBeforeForegroundChange(); // <—
-        clearLottie(); mountSVG(await readFileAsText(f));
+        clearLottie();
+        mountSVG(await readFileAsText(f));
         e.preventDefault(); return;
       }
     }
   }
   const text=e.clipboardData?.getData('text/plain');
   if(text && /<svg[\s>]/i.test(text)){
-    snapshotBeforeForegroundChange(); // <—
     clearLottie(); mountSVG(text); e.preventDefault(); return;
   }
   if(text && (text.startsWith('data:image/') || /^(https?:\/\/).+\.(png|jpe?g|webp|gif)(\?.*)?$/i.test(text))){
-    snapshotBeforeForegroundChange(); // <—
     clearLottie(); await mountForegroundImage(text); e.preventDefault(); return;
   }
   for(const it of items){
@@ -382,7 +300,6 @@ window.addEventListener('paste', async e=>{
       const f=it.getAsFile();
       const webpBlob = await compressToWebP(f, { maxW: MAX_W, maxH: MAX_H, quality: WEBP_QUALITY });
       const dataURL  = await blobToDataURL(webpBlob);
-      snapshotBeforeForegroundChange(); // <—
       clearLottie(); await mountForegroundImage(dataURL);
       console.log(`Сжато (paste): ${(f.size/1024).toFixed(1)}KB → ${(webpBlob.size/1024).toFixed(1)}KB`);
       e.preventDefault(); return;
@@ -469,49 +386,6 @@ window.addEventListener('keydown', e=>{ if(e.key==='Escape'){ resetLottieUI(); }
 
 lottieClose.addEventListener('click', ()=>{ clearLottie(); });
 
-// ---- FIX: кнопка Очистить ----
-document.getElementById('btnClear').addEventListener('click', async () => {
-  if (READ_ONLY) return;
-
-  if (lastSnapshot) {
-    await restoreProjectSnapshot(lastSnapshot);
-    // повторный "Очистить" после отката приведёт к пустому состоянию
-    lastSnapshot = null;
-  } else {
-    // fallback: как раньше — пустой экран
-    clearMount();
-    clearLottie();
-    bgLayer.style.backgroundImage = '';
-
-    setDesktopBase();
-    layoutToEmpty();
-
-    updateEditingUIAvailability();
-
-    lottieFileInput.value = '';
-    assetFileInput.value  = '';
-    bgFileInput.value     = '';
-  }
-});
-
-// Кнопка "Создать" — создать проект и перейти на его страницу
-document.getElementById('btnCreate')?.addEventListener('click', async ()=>{
-  if (READ_ONLY) return;
-  try{
-    const token = await ensureShareDoc(); // создаём постоянный документ
-    location.href = `${location.pathname}?share=${token}`;
-  }catch(e){
-    console.error(e);
-    alert('Не удалось создать страницу проекта.');
-  }
-});
-
-// Кнопка "Поделиться"
-document.getElementById('btnShare').addEventListener('click', async ()=>{
-  if (READ_ONLY) return;
-  await createShare();
-});
-
 // ЕДИНСТВЕННЫЙ обработчик ресайза
 window.addEventListener('resize', ()=>{
   if (framedMode) layoutToBaseFrame();
@@ -552,8 +426,9 @@ function dataUrlToBlob(dataUrl){
 }
 async function uploadToBucket(file){
   const up = await awStorage.createFile(BUCKET_ID, Appwrite.ID.unique(), file);
-  return `${APPWRITE_ENDPOINT}/storage/buckets/${BUCKET_ID}/files/${up.$id}/view?project=${APPWRITE_PROJECT}`
+  return `${APPWRITE_ENDPOINT}/storage/buckets/${BUCKET_ID}/files/${up.$id}/view?project=${APPWRITE_PROJECT}`;
 }
+function extractCssUrl(v){ if(!v) return null; const m=v.match(/url\(["']?(.*?)["']?\)/i); return m?m[1]:null; }
 function nanoid(n=22){ const ABC='0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'; let s=''; crypto.getRandomValues(new Uint32Array(n)).forEach(v=>s+=ABC[v%ABC.length]); return s; }
 async function copyToClipboard(text){ try{ await navigator.clipboard.writeText(text); } catch{} }
 
@@ -574,6 +449,11 @@ async function ensureShareDoc(){
 }
 
 /* ===== Поделиться (обновляем документ) ===== */
+document.getElementById('btnShare').addEventListener('click', async ()=>{
+  if (READ_ONLY) return;
+  await createShare();
+});
+
 async function createShare(){
   const token = await ensureShareDoc();
   try{
@@ -599,9 +479,15 @@ async function createShare(){
     } else if (fgSvg){
       const svgText = new XMLSerializer().serializeToString(fgSvg);
       foreground = { type:'svg', svgText };
-    } else { alert('Добавь картинку или SVG перед шарингом.'); return; }
+    } else {
+      alert('Добавь картинку или SVG перед шарингом.');
+      return;
+    }
 
-    if (!currentLottieJsonText){ alert('Добавь Lottie JSON перед шарингом.'); return; }
+    if (!currentLottieJsonText){
+      alert('Добавь Lottie JSON перед шарингом.');
+      return;
+    }
 
     const lottieRect = rectNormLive || computeRectNormFromCurrent();
     const lottieUrl  = await uploadToBucket(new File([currentLottieJsonText], 'anim.json', { type:'application/json' }));
@@ -642,7 +528,6 @@ async function createShare(){
     openedFromShare = true;
 
     bgLayer.style.backgroundImage = pj.backgroundUrl ? `url("${pj.backgroundUrl}")` : '';
-    updateEditingUIAvailability();
 
     layoutToBaseFrame();
     clearMount(); clearLottie();
@@ -680,4 +565,7 @@ async function createShare(){
   }
 })();
 
+/* ===== utils for WEBP ===== */
+function extractCssUrl(v){ if(!v) return null; const m=v.match(/url\(["']?(.*?)["']?\)/i); return m?m[1]:null; }
 
+// ===== END
