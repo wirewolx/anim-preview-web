@@ -1,3 +1,18 @@
+// === Appwrite init ===
+const APPWRITE_ENDPOINT = 'https://fra.cloud.appwrite.io/v1';
+const APPWRITE_PROJECT  = '<YOUR_PROJECT_ID>';
+const DB_ID = 'main';
+const SHARES_TABLE = 'shares';
+const BUCKET_ID = 'project-assets';
+
+const awClient  = new Appwrite.Client().setEndpoint(APPWRITE_ENDPOINT).setProject(APPWRITE_PROJECT);
+const awAccount = new Appwrite.Account(awClient);
+const awDB      = new Appwrite.Databases(awClient);
+const awStorage = new Appwrite.Storage(awClient);
+
+// анонимная сессия (нужна для Create)
+(async () => { try { await awAccount.get(); } catch { await awAccount.createAnonymousSession(); } })();
+
 const lottie = window.lottie;
 const dropzone = document.getElementById('dropzone');
 const controls = document.getElementById('controls');
@@ -401,3 +416,4 @@ function blobToDataURL(blob){
     r.readAsDataURL(blob);
   });
 }
+
