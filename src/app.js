@@ -502,37 +502,60 @@ async function createShare(){
   if (!token) return;
 
   try{
+    // 1) Получаем документ
     const doc = await awDB.getDocument(DB_ID, SHARES_TABLE, token);
     const pj = JSON.parse(doc.projectJson);
 
-    // фон
+    // 2) Фон
     bgLayer.style.backgroundImage = pj.backgroundUrl ? `url("${pj.backgroundUrl}")` : '';
 
-    // режим
-    MODE = pj.mode || 'desktop';
+    // 3) Режим и базовые размеры — сразу строим фрейм,
+    //    чтобы знать актуальные размеры stage (нужно для пересчёта нормализованных координат)
+    MODE   = pj.mode  || 'desktop';
     BASE_W = pj.baseW || 1440;
     BASE_H = pj.baseH || 800;
-    layoutToBaseFrame(); // важно: получить актуальные размеры stage
-    clearMount(); clearLottie();
+    layoutToBaseFrame();
 
-    // передний слой
+    // 4) Сбрасываем текущее содержимое
+    clearMount();
+    clearLottie();
+
+    // 5) Передний слой (картинка/ SVG)
     if (pj.foreground?.type === 'image' && pj.foreground.url) {
       await mountForegroundImage(pj.foreground.url);
     } else if (pj.foreground?.type === 'svg' && pj.foreground.svgText) {
       mountSVG(pj.foreground.svgText);
     }
 
-    // Lottie
+    // 6) Lottie (загружаем JSON, применяем нормализованные координаты, запускаем)
     if (pj.lottie?.url && pj.lottie?.rect) {
-    // применяем нормализованные x,y,w,h в пиксели текущего stage
-    const s = stage.getBoundingClientRect();
-    const r = pj.lottie.rect; // { x, y, w, h } в долях
-    Object.assign(lottieWrap.style, {
-      left:   (r.x * s.width)  + 'px',
-      top:    (r.y * s.height) + 'px',
-      width:  (r.w * s.width)  + 'px',
-      height: (r.h * s.height) + 'px'
+      const resp = await fetch(pj.lottie.url, { cache: 'no-store' });
+      if (!resp.ok) throw new Error('Failed to fetch lottie json: ' + resp.status);
+      const animJson = await resp.json();
+
+      // показываем контейнер
+      lottieWrap.classList.remove('hidden');
+
+      // пересчёт нормализованных координат в пиксели текущего stage
+      const s = stage.getBoundingClientRect();
+      const r = pj.lottie.rect; // { x, y, w, h } в долях
+      Object.assign(lottieWrap.style, {
+        left:   (r.x * s.width)  + 'px',
+        top:    (r.y * s.height) + 'px',
+        width:  (r.w * s.width)  + 'px',
+        height: (r.h * s.height) + 'px'
       });
+
+      // инициализация анимации
+      animation = lottie.loadAnimation({
+        container: lottieContainer,
+        renderer:  pj.lottie.renderer || 'svg',
+        loop:      pj.lottie.loop !== false,
+        autoplay:  pj.lottie.autoplay !== false,
+        animationData: animJson
+      });
+
+      // сохраним текст, чтобы при повторном "Поделиться" не требовать повторную загрузку
       currentLottieJsonText = JSON.stringify(animJson);
     }
   }catch(e){
@@ -540,5 +563,7 @@ async function createShare(){
     alert('Ссылка недоступна или повреждена.');
   }
 })();
+
+
 
 
