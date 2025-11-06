@@ -5,13 +5,22 @@ const DB_ID = '690ca7cd0022f8fe8ff8';
 const SHARES_TABLE = 'shares';
 const BUCKET_ID = 'project-assets';
 
+const STORAGE_TOKEN_KEY = 'shareToken';
+const URL_TOKEN = new URLSearchParams(location.search).get('share') || null;
+let SHARE_TOKEN = localStorage.getItem(STORAGE_TOKEN_KEY) || null;
+
 const awClient  = new Appwrite.Client().setEndpoint(APPWRITE_ENDPOINT).setProject(APPWRITE_PROJECT);
 const awAccount = new Appwrite.Account(awClient);
 const awDB      = new Appwrite.Databases(awClient);
 const awStorage = new Appwrite.Storage(awClient);
 
-// анонимная сессия (нужна для Create)
-(async () => { try { await awAccount.get(); } catch { await awAccount.createAnonymousSession(); } })();
+// анонимная сессия + создаём постоянный документ для редактора
+(async () => {
+  try { await awAccount.get(); } catch { await awAccount.createAnonymousSession(); }
+  if (!URL_TOKEN) {
+    try { await ensureShareDoc(); } catch (e) { console.error('ensureShareDoc failed', e); }
+  }
+})();
 
 const lottie = window.lottie;
 const dropzone = document.getElementById('dropzone');
@@ -50,27 +59,21 @@ function resetLottieUI(){
   document.body.style.cursor='';
   window.getSelection?.().removeAllRanges?.();
 }
+
 function setReadOnly(on){
   READ_ONLY = !!on;
-  
-  // скрываем панели редактирования
   if (controls) controls.style.display = on ? 'none' : 'flex';
   if (dropzone) dropzone.style.display = on ? 'none' : 'grid';
-
-  // отключаем загрузку
   bgFileInput.disabled = on;
   assetFileInput.disabled = on;
   lottieFileInput.disabled = on;
-  
-  // скрываем кнопки Очистить / Поделиться
   const btnShare = document.getElementById('btnShare');
   const btnClear = document.getElementById('btnClear');
   if (btnShare) btnShare.style.display = on ? 'none' : 'inline-block';
   if (btnClear) btnClear.style.display = on ? 'none' : 'inline-block';
-  
-  // отключаем взаимодействие с лотти
   lottieWrap.style.pointerEvents = on ? 'none' : 'auto';
 }
+
 function applyLottieRectFromNorm(rect){
   if (!rect) return;
   const s = stage.getBoundingClientRect();
@@ -110,7 +113,6 @@ function clearLottie(){
   lottieWrap.classList.add('hidden');
   lottieFileInput.value = '';
   currentLottieJsonText = null;
-  // сбрасывать norm не будем — редактор может перезаписать сам
 }
 
 function parseNumberWithUnits(v){ if(v==null) return null; const n=parseFloat(String(v).replace(',','.')); return isFinite(n)?n:null; }
@@ -178,7 +180,7 @@ function layoutToBaseFrame() {
   const bw = sw;
   const bh = Math.round(ch + sh);
 
-  // центрирование: если панели нет — строго по центру, если есть — центр с учётом панели
+  // центрирование
   let left = READ_ONLY
     ? Math.round((window.innerWidth  - bw) / 2)
     : Math.max(g + sidebar + 16, Math.round((window.innerWidth - bw) / 2));
@@ -213,7 +215,6 @@ function layoutToEmpty() {
   browserEl.style.display = 'none';
   controls.style.display = READ_ONLY ? 'none' : 'flex';
   dropzone.style.display = READ_ONLY ? 'none' : 'grid';
-
 }
 
 /* ===== mount image/SVG ===== */
@@ -252,8 +253,9 @@ async function mountForegroundImage(dataURL){
 
 /* ===== inputs / paste ===== */
 dropzone.addEventListener('click', () => { if (READ_ONLY) return; assetFileInput.click(); });
+
 assetFileInput.addEventListener('change', async e=>{
-if (READ_ONLY) return;
+  if (READ_ONLY) return;
   const f=e.target.files?.[0]; if(!f) return;
   clearLottie();
   try{
@@ -279,7 +281,7 @@ bgFileInput.addEventListener('change', async e=>{
 });
 
 window.addEventListener('paste', async e=>{
-if (READ_ONLY) return;
+  if (READ_ONLY) return;
   const items=e.clipboardData?.items||[];
   for(const it of items){
     if(it.type==='image/svg+xml'){
@@ -343,12 +345,13 @@ lottieFileInput.addEventListener('change', e=>{
 
 let dragging=false, dx=0, dy=0;
 lottieWrap.addEventListener('mousedown', e=>{
-if (READ_ONLY) return;
+  if (READ_ONLY) return;
   if(e.target.classList.contains('handle') || e.target.id==='lottieClose') return;
   dragging=true; lottieWrap.classList.add('active');
   const rect=lottieWrap.getBoundingClientRect(); dx=e.clientX-rect.left; dy=e.clientY-rect.top;
   lottieWrap.style.cursor='grabbing'; e.preventDefault();
 });
+
 window.addEventListener('mousemove', e=>{
   if(!dragging) return;
   const r=stage.getBoundingClientRect();
@@ -357,6 +360,7 @@ window.addEventListener('mousemove', e=>{
   y=Math.max(0, Math.min(y, r.height- lottieWrap.offsetHeight));
   lottieWrap.style.left=x+'px'; lottieWrap.style.top=y+'px';
 });
+
 const MIN_W=60, MIN_H=60; let resizing=null;
 function getCursorForDir(dir){return ({nw:'nwse-resize',se:'nwse-resize',ne:'nesw-resize',sw:'nesw-resize',n:'ns-resize',s:'ns-resize',w:'ew-resize',e:'ew-resize'})[dir]||'default';}
 function startResize(dir,e){
@@ -504,6 +508,27 @@ function nanoid(n=22){
   return s;
 }
 
+async function ensureShareDoc() {
+  if (SHARE_TOKEN) return SHARE_TOKEN;
+
+  const token = nanoid(22);
+  const now = Math.floor(Date.now() / 1000);
+  const projectJson = {
+    mode: MODE, baseW: BASE_W, baseH: BASE_H,
+    backgroundUrl: null, foreground: null, lottie: null, schemaVersion: 2
+  };
+
+  await awDB.createDocument(DB_ID, SHARES_TABLE, token, {
+    projectJson: JSON.stringify(projectJson),
+    createdAt: now,
+    revoked: false
+  });
+
+  SHARE_TOKEN = token;
+  localStorage.setItem(STORAGE_TOKEN_KEY, token);
+  return token;
+}
+
 async function copyToClipboard(text){
   try { await navigator.clipboard.writeText(text); } catch {}
 }
@@ -513,6 +538,9 @@ document.getElementById('btnShare').addEventListener('click', ()=>{ if (READ_ONL
 
 async function createShare(){
   try{
+    // 0) гарантируем постоянный токен проекта (создаст 1 раз, потом вернёт из localStorage)
+    const token = await ensureShareDoc();
+
     // фон
     const bgRaw = extractCssUrl(bgLayer.style.backgroundImage);
     let backgroundUrl = null;
@@ -550,7 +578,9 @@ async function createShare(){
     // нормализуем позицию/размер относительно текущего stage
     const lottieRect = rectNormLive || computeRectNormFromCurrent();
 
-    const lottieUrl = await uploadToBucket(new File([currentLottieJsonText], 'anim.json', { type: 'application/json' }));
+    const lottieUrl = await uploadToBucket(
+      new File([currentLottieJsonText], 'anim.json', { type: 'application/json' })
+    );
 
     const projectJson = {
       mode: MODE, baseW: BASE_W, baseH: BASE_H,
@@ -560,13 +590,10 @@ async function createShare(){
       schemaVersion: 2
     };
 
-    const token = nanoid(22);
-    const now = Math.floor(Date.now()/1000);
-
-    await awDB.createDocument(DB_ID, SHARES_TABLE, token, {
-      projectJson: JSON.stringify(projectJson), // колонка string
-      createdAt: now,
-      revoked: false
+    // НЕ создаём новый документ — ОБНОВЛЯЕМ существующий
+    await awDB.updateDocument(DB_ID, SHARES_TABLE, token, {
+      projectJson: JSON.stringify(projectJson),
+      updatedAt: Math.floor(Date.now()/1000)
     });
 
     const link = `${location.origin}${location.pathname}?share=${token}`;
@@ -574,7 +601,7 @@ async function createShare(){
     alert('Ссылка скопирована:\n' + link);
   }catch(err){
     console.error(err);
-    alert('Не получилось создать ссылку. Открой консоль для деталей.');
+    alert('Не получилось обновить ссылку. Открой консоль для деталей.');
   }
 }
 
@@ -585,47 +612,43 @@ async function createShare(){
   if (!token) return;
 
   try{
-    // 1) Получаем документ
+    // 1) Документ
     const doc = await awDB.getDocument(DB_ID, SHARES_TABLE, token);
     const pj = JSON.parse(doc.projectJson);
 
-    // 2) Фон
-    bgLayer.style.backgroundImage = pj.backgroundUrl ? `url("${pj.backgroundUrl}")` : '';
-
-    // 3) Режим и базовые размеры — сразу строим фрейм,
-    //    чтобы знать актуальные размеры stage
+    // 2) Режим и базовые размеры
     MODE   = pj.mode  || 'desktop';
     BASE_W = pj.baseW || 1440;
     BASE_H = pj.baseH || 800;
-    setReadOnly(true);       // <— зритель не редактирует
-    openedFromShare = true;  // было уже у тебя, пусть остаётся
-    layoutToBaseFrame();
-    MODE = pj.mode || 'desktop';
-    BASE_W = pj.baseW || 1440;
-    BASE_H = pj.baseH || 800;
-    layoutToBaseFrame();
-    setReadOnly(true); // <- зритель
 
-    // 4) Сбрасываем текущее содержимое
+    // 3) viewer
+    setReadOnly(true);
+    openedFromShare = true;
+
+    // 4) фон
+    bgLayer.style.backgroundImage = pj.backgroundUrl ? `url("${pj.backgroundUrl}")` : '';
+
+    // 5) построить фрейм раньше, чем монтировать контент
+    layoutToBaseFrame();
+
+    // 6) очистить и смонтировать передний слой
     clearMount();
     clearLottie();
 
-    // 5) Передний слой (картинка/ SVG)
     if (pj.foreground?.type === 'image' && pj.foreground.url) {
       await mountForegroundImage(pj.foreground.url);
     } else if (pj.foreground?.type === 'svg' && pj.foreground.svgText) {
       mountSVG(pj.foreground.svgText);
     }
 
-    // 6) Lottie
+    // 7) Lottie
     if (pj.lottie?.url && pj.lottie?.rect) {
       const resp = await fetch(pj.lottie.url, { cache: 'no-store' });
       if (!resp.ok) throw new Error('Failed to fetch lottie json: ' + resp.status);
       const animJson = await resp.json();
 
-      openedFromShare = true;
       sharedRectNorm = pj.lottie.rect;
-      rectNormLive = sharedRectNorm; // единый источник для ресайза
+      rectNormLive = sharedRectNorm;
 
       lottieWrap.classList.remove('hidden');
       applyLottieRectFromNorm(rectNormLive);
@@ -645,9 +668,3 @@ async function createShare(){
     alert('Ссылка недоступна или повреждена.');
   }
 })();
-
-
-
-
-
-
