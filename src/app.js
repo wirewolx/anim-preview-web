@@ -158,39 +158,49 @@ function detectAndSetModeByWidth(w, h){
 
 /* ===== layout ===== */
 function layoutToBaseFrame() {
-  const g = 32;
-  const ch = (MODE==='mobile' ? 0 : 64);
-  const sidebar = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w')) || 220;
+  const g  = 32;
+  const ch = (MODE === 'mobile' ? 0 : 64);
 
-  const availW = window.innerWidth - g*2 - sidebar - 16;
-  const availH = window.innerHeight - g*2;
-  const s = Math.min(availW/BASE_W, (availH - ch)/BASE_H);
-  const sw = Math.round(BASE_W*s);
-  const sh = Math.round(BASE_H*s);
-  const bw = sw, bh = Math.round(ch + sh);
+  // реальная (эффективная) ширина левой панели:
+  const sidebarCss = parseFloat(
+    getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w')
+  ) || 220;
 
-  let left, top;
-  
-  // если есть боковая панель (sidebar > 0), центрируем с учётом её;
-  // если нет — строго по центру окна
-  if (sidebar > 0) {
-    left = Math.max(g + sidebar + 16, Math.round((window.innerWidth - bw) / 2));
-  } else {
-    left = Math.round((window.innerWidth - bw) / 2);
-  }
-  
-  top = Math.round((window.innerHeight - bh) / 2);
+  // если мы в режиме просмотра (viewer) – считаем, что панели нет
+  const sidebar = READ_ONLY ? 0 : sidebarCss;
 
+  const availW = window.innerWidth  - g * 2 - sidebar - (sidebar ? 16 : 0);
+  const availH = window.innerHeight - g * 2;
 
-  Object.assign(browserEl.style, { width: bw + 'px', height: bh + 'px', left: left + 'px', top: top + 'px', right: 'auto', bottom: 'auto' });
-  Object.assign(stage.style, { flex:'0 0 auto', height: sh + 'px', width: '100%' });
+  const s  = Math.min(availW / BASE_W, (availH - ch) / BASE_H);
+  const sw = Math.round(BASE_W * s);
+  const sh = Math.round(BASE_H * s);
+  const bw = sw;
+  const bh = Math.round(ch + sh);
+
+  // центрирование: если панели нет — строго по центру, если есть — центр с учётом панели
+  let left = READ_ONLY
+    ? Math.round((window.innerWidth  - bw) / 2)
+    : Math.max(g + sidebar + 16, Math.round((window.innerWidth - bw) / 2));
+
+  let top  = Math.round((window.innerHeight - bh) / 2);
+
+  Object.assign(browserEl.style, {
+    width:  bw + 'px',
+    height: bh + 'px',
+    left:   left + 'px',
+    top:    top  + 'px',
+    right:  'auto',
+    bottom: 'auto'
+  });
+
+  Object.assign(stage.style, { flex: '0 0 auto', height: sh + 'px', width: '100%' });
 
   framedMode = true;
   browserEl.style.display = 'flex';
-  controls.style.display = READ_ONLY ? 'none' : 'flex';
-  dropzone.style.display = READ_ONLY ? 'none' : 'grid';
+  controls.style.display  = READ_ONLY ? 'none' : 'flex';
+  dropzone.style.display  = READ_ONLY ? 'none' : 'grid';
 }
-
 function layoutToEmpty() {
   Object.assign(browserEl.style, {
     left: 'calc(var(--gutter) + var(--sidebar-w) + 16px)',
@@ -635,6 +645,7 @@ async function createShare(){
     alert('Ссылка недоступна или повреждена.');
   }
 })();
+
 
 
 
