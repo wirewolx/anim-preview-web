@@ -5,20 +5,25 @@ const DB_ID = '690ca7cd0022f8fe8ff8';
 const SHARES_TABLE = 'shares';
 const BUCKET_ID = 'project-assets';
 
+// ---- permanent share token (per editor) ----
 const STORAGE_TOKEN_KEY = 'shareToken';
-const URL_TOKEN = new URLSearchParams(location.search).get('share') || null;
-let SHARE_TOKEN = localStorage.getItem(STORAGE_TOKEN_KEY) || null;
-// кто зритель: в URL есть токен, и он не совпадает с локальным токеном редактора
+const URL_TOKEN  = new URLSearchParams(location.search).get('share') || null;
+let   SHARE_TOKEN = localStorage.getItem(STORAGE_TOKEN_KEY) || null;
 const isViewer = () => URL_TOKEN && URL_TOKEN !== SHARE_TOKEN;
 
+// ---- Appwrite client (создаём ДО любых вызовов) ----
+const awClient  = new Appwrite.Client().setEndpoint(APPWRITE_ENDPOINT).setProject(APPWRITE_PROJECT);
+const awAccount = new Appwrite.Account(awClient);
+const awDB      = new Appwrite.Databases(awClient);
+const awStorage = new Appwrite.Storage(awClient);
+
+// анонимная сессия + авто-создание документа и подмена URL
 (async () => {
   try { await awAccount.get(); } catch { await awAccount.createAnonymousSession(); }
 
-  // если открыли редактор без ?share= — создаём документ
-  // и сразу подставляем токен в адресную строку (без перезагрузки)
   if (!URL_TOKEN) {
     try {
-      await ensureShareDoc();
+      await ensureShareDoc();                         // создаст и сохранит SHARE_TOKEN при первом заходе
       if (SHARE_TOKEN) {
         history.replaceState(null, '', `${location.pathname}?share=${SHARE_TOKEN}`);
       }
@@ -27,47 +32,38 @@ const isViewer = () => URL_TOKEN && URL_TOKEN !== SHARE_TOKEN;
     }
   }
 })();
-const awClient  = new Appwrite.Client().setEndpoint(APPWRITE_ENDPOINT).setProject(APPWRITE_PROJECT);
-const awAccount = new Appwrite.Account(awClient);
-const awDB      = new Appwrite.Databases(awClient);
-const awStorage = new Appwrite.Storage(awClient);
 
-// анонимная сессия + создаём постоянный документ для редактора
-(async () => {
-  try { await awAccount.get(); } catch { await awAccount.createAnonymousSession(); }
-  if (!URL_TOKEN) {
-    try { await ensureShareDoc(); } catch (e) { console.error('ensureShareDoc failed', e); }
-  }
-})();
-
+// ====== DOM ======
 const lottie = window.lottie;
-const dropzone = document.getElementById('dropzone');
-const controls = document.getElementById('controls');
-const bgFileInput = document.getElementById('bgFile');
+const dropzone       = document.getElementById('dropzone');
+const controls       = document.getElementById('controls');
+const bgFileInput    = document.getElementById('bgFile');
 const assetFileInput = document.getElementById('assetFile');
-const lottieFileInput = document.getElementById('lottieFile');
+const lottieFileInput= document.getElementById('lottieFile');
 
-const bgLayer = document.getElementById('bgLayer');
-const mount = document.getElementById('svgMount');
-const stage = document.getElementById('stage');
+const bgLayer   = document.getElementById('bgLayer');
+const mount     = document.getElementById('svgMount');
+const stage     = document.getElementById('stage');
 const browserEl = document.getElementById('browser');
-const tabTitle = document.getElementById('tabTitle');
+const tabTitle  = document.getElementById('tabTitle');
 
-const lottieWrap = document.getElementById('lottieWrap');
-const lottieClose = document.getElementById('lottieClose');
+const lottieWrap      = document.getElementById('lottieWrap');
+const lottieClose     = document.getElementById('lottieClose');
 const lottieContainer = document.getElementById('lottie');
 
+// ====== state ======
 let animation = null;
-let currentLottieJsonText = null; // исходный Lottie JSON (string)
+let currentLottieJsonText = null;
 let framedMode = false;
-let READ_ONLY = false; // режим только просмотра
-let MODE = 'desktop'; // 'desktop' | 'mobile'
+let READ_ONLY  = false;
+
+let MODE = 'desktop';
 let BASE_W = 1440, BASE_H = 800;
 
-// нормализованные координаты (0..1) для ресайза
-let openedFromShare = false;    // режим открыт по ссылке
-let sharedRectNorm = null;      // {x,y,w,h} из шары
-let rectNormLive = null;        // текущие доли в редакторе
+// нормализованные координаты (0..1)
+let openedFromShare = false;
+let sharedRectNorm  = null;
+let rectNormLive    = null;
 
 /* ===== helpers ===== */
 function resetLottieUI(){
@@ -77,21 +73,22 @@ function resetLottieUI(){
   document.body.style.cursor='';
   window.getSelection?.().removeAllRanges?.();
 }
-
 function setReadOnly(on){
   READ_ONLY = !!on;
   if (controls) controls.style.display = on ? 'none' : 'flex';
-  if (dropzone) dropzone.style.display = on ? 'none' : 'grid';
-  bgFileInput.disabled = on;
+  if (dropzone)  dropzone.style.display  = on ? 'none' : 'grid';
+
+  bgFileInput.disabled    = on;
   assetFileInput.disabled = on;
-  lottieFileInput.disabled = on;
+  lottieFileInput.disabled= on;
+
   const btnShare = document.getElementById('btnShare');
   const btnClear = document.getElementById('btnClear');
   if (btnShare) btnShare.style.display = on ? 'none' : 'inline-block';
   if (btnClear) btnClear.style.display = on ? 'none' : 'inline-block';
+
   lottieWrap.style.pointerEvents = on ? 'none' : 'auto';
 }
-
 function applyLottieRectFromNorm(rect){
   if (!rect) return;
   const s = stage.getBoundingClientRect();
@@ -102,29 +99,24 @@ function applyLottieRectFromNorm(rect){
     height: (rect.h * s.height) + 'px'
   });
 }
-
 function computeRectNormFromCurrent(){
   const s = stage.getBoundingClientRect();
   const r = lottieWrap.getBoundingClientRect();
   return {
     x: (r.left - s.left) / s.width,
     y: (r.top  - s.top)  / s.height,
-    w:  r.width / s.width,
-    h:  r.height/ s.height
+    w:  r.width  / s.width,
+    h:  r.height / s.height
   };
 }
-
-// сброс размеров/позиции лотти-контейнера к дефолту
 function resetLottieRectToDefaults(){
   lottieWrap.style.left = '40px';
-  lottieWrap.style.top = '40px';
-  lottieWrap.style.width = '200px';
+  lottieWrap.style.top  = '40px';
+  lottieWrap.style.width  = '200px';
   lottieWrap.style.height = '200px';
 }
-
-// очистка Lottie
 function clearLottie(){
-  if (animation) { animation.destroy(); animation = null; }
+  if (animation){ animation.destroy(); animation = null; }
   lottieContainer.innerHTML = '';
   resetLottieUI();
   resetLottieRectToDefaults();
@@ -150,89 +142,75 @@ function isSVGFile(f){ const t=(f.type||'').toLowerCase(); const n=(f.name||'').
 function isRasterImageFile(f){ const t=(f.type||'').toLowerCase(); const n=(f.name||'').toLowerCase(); return (t.startsWith('image/')&&t!=='image/svg+xml')||/\.(png|jpe?g|webp|gif)$/i.test(n); }
 
 /* ===== mode detection ===== */
-function clamp(x, a, b){ return Math.max(a, Math.min(b, x)); }
+function clamp(x,a,b){ return Math.max(a, Math.min(b,x)); }
 function setDesktopBase(){
-  MODE='desktop';
-  BASE_W=1440; BASE_H=800;
+  MODE='desktop'; BASE_W=1440; BASE_H=800;
   tabTitle.textContent='Design Preview';
   browserEl.classList.remove('mobile');
 }
-function setMobileBaseFromIntrinsic(w, h){
+function setMobileBaseFromIntrinsic(w,h){
   MODE='mobile';
   const targetW = clamp(Math.round(w), 360, 475);
-  const scale = targetW / w;
+  const scale   = targetW / w;
   BASE_W = targetW;
   BASE_H = clamp(Math.round(h * scale), 600, 900);
-  tabTitle.textContent = 'Mobile Preview';
+  tabTitle.textContent='Mobile Preview';
   browserEl.classList.add('mobile');
 }
-function detectAndSetModeByWidth(w, h){
-  if (w >= 360 && w <= 475) { setMobileBaseFromIntrinsic(w, h); return; }
-  const portrait = h >= w * 1.2;
-  if (portrait) {
-    if (w >= 700 && w <= 950) { setMobileBaseFromIntrinsic(w / 2, h / 2); return; }
-    if (w >= 1050 && w <= 1500) { setMobileBaseFromIntrinsic(w / 3, h / 3); return; }
+function detectAndSetModeByWidth(w,h){
+  if (w>=360 && w<=475) { setMobileBaseFromIntrinsic(w,h); return; }
+  const portrait = h >= w*1.2;
+  if (portrait){
+    if (w>=700 && w<=950)   { setMobileBaseFromIntrinsic(w/2, h/2); return; }
+    if (w>=1050 && w<=1500) { setMobileBaseFromIntrinsic(w/3, h/3); return; }
   }
   setDesktopBase();
 }
 
 /* ===== layout ===== */
-function layoutToBaseFrame() {
+function layoutToBaseFrame(){
   const g  = 32;
-  const ch = (MODE === 'mobile' ? 0 : 64);
+  const ch = (MODE==='mobile'?0:64);
+  const sidebarCss = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w')) || 220;
+  const sidebar    = READ_ONLY ? 0 : sidebarCss;
 
-  // реальная (эффективная) ширина левой панели:
-  const sidebarCss = parseFloat(
-    getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w')
-  ) || 220;
+  const availW = window.innerWidth  - g*2 - sidebar - (sidebar ? 16 : 0);
+  const availH = window.innerHeight - g*2;
 
-  // если мы в режиме просмотра (viewer) – считаем, что панели нет
-  const sidebar = READ_ONLY ? 0 : sidebarCss;
-
-  const availW = window.innerWidth  - g * 2 - sidebar - (sidebar ? 16 : 0);
-  const availH = window.innerHeight - g * 2;
-
-  const s  = Math.min(availW / BASE_W, (availH - ch) / BASE_H);
+  const s  = Math.min(availW/BASE_W, (availH - ch)/BASE_H);
   const sw = Math.round(BASE_W * s);
   const sh = Math.round(BASE_H * s);
-  const bw = sw;
-  const bh = Math.round(ch + sh);
+  const bw = sw, bh = Math.round(ch + sh);
 
-  // центрирование
-  let left = READ_ONLY
+  const left = READ_ONLY
     ? Math.round((window.innerWidth  - bw) / 2)
     : Math.max(g + sidebar + 16, Math.round((window.innerWidth - bw) / 2));
 
-  let top  = Math.round((window.innerHeight - bh) / 2);
+  const top  = Math.round((window.innerHeight - bh) / 2);
 
   Object.assign(browserEl.style, {
-    width:  bw + 'px',
-    height: bh + 'px',
-    left:   left + 'px',
-    top:    top  + 'px',
-    right:  'auto',
-    bottom: 'auto'
+    width:  bw+'px', height: bh+'px',
+    left: left+'px', top: top+'px',
+    right: 'auto', bottom: 'auto'
   });
-
-  Object.assign(stage.style, { flex: '0 0 auto', height: sh + 'px', width: '100%' });
+  Object.assign(stage.style, { flex:'0 0 auto', height: sh+'px', width:'100%' });
 
   framedMode = true;
   browserEl.style.display = 'flex';
   controls.style.display  = READ_ONLY ? 'none' : 'flex';
   dropzone.style.display  = READ_ONLY ? 'none' : 'grid';
 }
-function layoutToEmpty() {
+function layoutToEmpty(){
   Object.assign(browserEl.style, {
-    left: 'calc(var(--gutter) + var(--sidebar-w) + 16px)',
-    top: 'var(--gutter)', right: 'var(--gutter)', bottom: 'var(--gutter)',
-    width: '', height: ''
+    left:'calc(var(--gutter) + var(--sidebar-w) + 16px)',
+    top:'var(--gutter)', right:'var(--gutter)', bottom:'var(--gutter)',
+    width:'', height:''
   });
-  Object.assign(stage.style, { flex:'1 1 auto', height: 'auto', width: '100%' });
-
+  Object.assign(stage.style, { flex:'1 1 auto', height:'auto', width:'100%' });
   framedMode = false;
-  browserEl.style.display = 'none';
-  controls.style.display = READ_ONLY ? 'none' : 'flex';
-  dropzone.style.display = READ_ONLY ? 'none' : 'grid';
+  browserEl.style.display='none';
+  controls.style.display  = READ_ONLY ? 'none' : 'flex';
+  dropzone.style.display  = READ_ONLY ? 'none' : 'grid';
 }
 
 /* ===== mount image/SVG ===== */
@@ -252,7 +230,6 @@ function mountSVG(svgText){
   mount.appendChild(svg);
   layoutToBaseFrame();
 }
-
 async function mountForegroundImage(dataURL){
   return new Promise((res,rej)=>{
     const img=new Image();
@@ -270,18 +247,18 @@ async function mountForegroundImage(dataURL){
 }
 
 /* ===== inputs / paste ===== */
-dropzone.addEventListener('click', () => { if (READ_ONLY) return; assetFileInput.click(); });
+dropzone.addEventListener('click', ()=>{ if (READ_ONLY) return; assetFileInput.click(); });
 
 assetFileInput.addEventListener('change', async e=>{
   if (READ_ONLY) return;
   const f=e.target.files?.[0]; if(!f) return;
   clearLottie();
   try{
-    if(isSVGFile(f)){
+    if (isSVGFile(f)){
       mountSVG(await readFileAsText(f));
-    } else if(isRasterImageFile(f)){
+    } else if (isRasterImageFile(f)){
       const webpBlob = await compressToWebP(f, { maxW: MAX_W, maxH: MAX_H, quality: WEBP_QUALITY });
-      const dataURL = await blobToDataURL(webpBlob);
+      const dataURL  = await blobToDataURL(webpBlob);
       await mountForegroundImage(dataURL);
       console.log(`Сжато (file): ${(f.size/1024).toFixed(1)}KB → ${(webpBlob.size/1024).toFixed(1)}KB`);
     }
@@ -307,34 +284,25 @@ window.addEventListener('paste', async e=>{
       if(f){
         clearLottie();
         mountSVG(await readFileAsText(f));
-        e.preventDefault();
-        return;
+        e.preventDefault(); return;
       }
     }
   }
   const text=e.clipboardData?.getData('text/plain');
   if(text && /<svg[\s>]/i.test(text)){
-    clearLottie();
-    mountSVG(text);
-    e.preventDefault();
-    return;
+    clearLottie(); mountSVG(text); e.preventDefault(); return;
   }
-  if(text && (text.startsWith('data:image/') || /^(https?:\/\/).+\.(png|jpe?g|webp|gif)(\?.*)?$/i.test(text)) ){
-    clearLottie();
-    await mountForegroundImage(text);
-    e.preventDefault();
-    return;
+  if(text && (text.startsWith('data:image/') || /^(https?:\/\/).+\.(png|jpe?g|webp|gif)(\?.*)?$/i.test(text))){
+    clearLottie(); await mountForegroundImage(text); e.preventDefault(); return;
   }
   for(const it of items){
     if(it.kind==='file' && it.type.startsWith('image/')){
       const f=it.getAsFile();
       const webpBlob = await compressToWebP(f, { maxW: MAX_W, maxH: MAX_H, quality: WEBP_QUALITY });
-      const dataURL = await blobToDataURL(webpBlob);
-      clearLottie();
-      await mountForegroundImage(dataURL);
+      const dataURL  = await blobToDataURL(webpBlob);
+      clearLottie(); await mountForegroundImage(dataURL);
       console.log(`Сжато (paste): ${(f.size/1024).toFixed(1)}KB → ${(webpBlob.size/1024).toFixed(1)}KB`);
-      e.preventDefault();
-      return;
+      e.preventDefault(); return;
     }
   }
 });
@@ -345,7 +313,7 @@ lottieFileInput.addEventListener('change', e=>{
   const f=e.target.files?.[0]; if(!f) return;
   const r=new FileReader();
   r.onload=ev=>{
-    currentLottieJsonText = ev.target.result; // сохраняем текст
+    currentLottieJsonText = ev.target.result;
     const json=JSON.parse(currentLottieJsonText);
     if(animation) animation.destroy();
     lottieContainer.innerHTML='';
@@ -353,9 +321,8 @@ lottieFileInput.addEventListener('change', e=>{
     lottieWrap.classList.remove('hidden');
     if(!framedMode) layoutToBaseFrame();
     animation=lottie.loadAnimation({container:lottieContainer,renderer:'svg',loop:true,autoplay:true,animationData:json});
-    // зафиксируем стартовые доли для ресайза
     rectNormLive = computeRectNormFromCurrent();
-    openedFromShare = false; // это локальная работа, не режим шары
+    openedFromShare = false;
   };
   r.readAsText(f);
   lottieFileInput.value='';
@@ -364,12 +331,11 @@ lottieFileInput.addEventListener('change', e=>{
 let dragging=false, dx=0, dy=0;
 lottieWrap.addEventListener('mousedown', e=>{
   if (READ_ONLY) return;
-  if(e.target.classList.contains('handle') || e.target.id==='lottieClose') return;
+  if (e.target.classList.contains('handle') || e.target.id==='lottieClose') return;
   dragging=true; lottieWrap.classList.add('active');
   const rect=lottieWrap.getBoundingClientRect(); dx=e.clientX-rect.left; dy=e.clientY-rect.top;
   lottieWrap.style.cursor='grabbing'; e.preventDefault();
 });
-
 window.addEventListener('mousemove', e=>{
   if(!dragging) return;
   const r=stage.getBoundingClientRect();
@@ -393,8 +359,8 @@ function applyResize(e){
   let newL=resizing.startL, newT=resizing.startT, newW=resizing.startW, newH=resizing.startH, dir=resizing.dir;
   if(dir.includes('e')) newW=Math.max(MIN_W, resizing.startW+dx);
   if(dir.includes('s')) newH=Math.max(MIN_H, resizing.startH+dy);
-  if(dir.includes('w')) { newW=Math.max(MIN_W, resizing.startW-dx); newL=resizing.startL+(resizing.startW-newW); }
-  if(dir.includes('n')) { newH=Math.max(MIN_H, resizing.startH-dy); newT=resizing.startT+(resizing.startH-newH); }
+  if(dir.includes('w')){ newW=Math.max(MIN_W, resizing.startW-dx); newL=resizing.startL+(resizing.startW-newW); }
+  if(dir.includes('n')){ newH=Math.max(MIN_H, resizing.startH-dy); newT=resizing.startT+(resizing.startH-newH); }
   if(newL<0){ newW+=newL; newL=0; } if(newT<0){ newH+=newT; newT=0; }
   if(newL+newW>r.width) newW=r.width-newL; if(newT+newH>r.height) newH=r.height-newT;
   lottieWrap.style.left=newL+'px'; lottieWrap.style.top=newT+'px'; lottieWrap.style.width=newW+'px'; lottieWrap.style.height=newH+'px';
@@ -411,33 +377,20 @@ window.addEventListener('mouseup', ()=>{
   if(dragging || resizing){
     dragging=false; resizing=null; document.body.style.cursor='';
     lottieWrap.classList.remove('active'); lottieWrap.style.cursor='grab';
-    // после любого перемещения/ресайза — обновим нормализованные доли
     if (!lottieWrap.classList.contains('hidden')) {
       rectNormLive = computeRectNormFromCurrent();
     }
   }
 });
-window.addEventListener('keydown', (e)=>{ if(e.key==='Escape'){ resetLottieUI(); } });
+window.addEventListener('keydown', e=>{ if(e.key==='Escape'){ resetLottieUI(); } });
 
 lottieClose.addEventListener('click', ()=>{ clearLottie(); });
-/* overlay */
-document.getElementById('btnClear').addEventListener('click', ()=>{
-  if (READ_ONLY) return;
-  clearMount();
-  clearLottie();
-  bgLayer.style.backgroundImage='';
-  setDesktopBase();
-  layoutToEmpty(); lottieFileInput.value=''; assetFileInput.value=''; bgFileInput.value='';
-});
 
-// ЕДИНСТВЕННЫЙ обработчик ресайза окна
-window.addEventListener('resize', () => {
+// ЕДИНСТВЕННЫЙ обработчик ресайза
+window.addEventListener('resize', ()=>{
   if (framedMode) layoutToBaseFrame();
-  // если есть актуальные доли — применим
   const rectToUse = rectNormLive || (openedFromShare ? sharedRectNorm : null);
-  if (!lottieWrap.classList.contains('hidden') && rectToUse) {
-    applyLottieRectFromNorm(rectToUse);
-  }
+  if (!lottieWrap.classList.contains('hidden') && rectToUse) applyLottieRectFromNorm(rectToUse);
 });
 
 /* стартуем пустыми */
@@ -445,266 +398,153 @@ setDesktopBase();
 layoutToEmpty();
 
 /* ===== СЖАТИЕ В WEBP ===== */
-const WEBP_QUALITY = 0.82;     // 0..1
-const MAX_W = 1920;
-const MAX_H = 1080;
+const WEBP_QUALITY = 0.82;
+const MAX_W = 1920, MAX_H = 1080;
 
-async function compressToWebP(file, { maxW, maxH, quality }) {
+async function compressToWebP(file,{maxW,maxH,quality}){
   let bitmap;
-  try {
-    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
-  } catch {
-    const img = await loadHTMLImage(file);
-    bitmap = await createImageBitmap(img);
-  }
+  try { bitmap = await createImageBitmap(file, { imageOrientation:'from-image' }); }
+  catch { const img = await loadHTMLImage(file); bitmap = await createImageBitmap(img); }
   const { targetW, targetH } = fitContain(bitmap.width, bitmap.height, maxW, maxH);
-  const canvas = document.createElement('canvas');
-  canvas.width  = targetW;
-  canvas.height = targetH;
-  const ctx = canvas.getContext('2d', { alpha: true });
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(bitmap, 0, 0, targetW, targetH);
-  const blob = await canvasToBlob(canvas, 'image/webp', quality);
-  if (!blob) throw new Error('Canvas toBlob вернул null');
-  return blob;
+  const canvas = document.createElement('canvas'); canvas.width=targetW; canvas.height=targetH;
+  const ctx = canvas.getContext('2d',{alpha:true}); ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
+  ctx.drawImage(bitmap,0,0,targetW,targetH);
+  const blob = await canvasToBlob(canvas,'image/webp',quality); if(!blob) throw new Error('Canvas toBlob null'); return blob;
 }
+function fitContain(w,h,maxW,maxH){ let r=Math.min(maxW/w,maxH/h); if(!isFinite(r)||r>1) r=1; return {targetW:Math.round(w*r), targetH:Math.round(h*r)}; }
+function loadHTMLImage(file){ return new Promise((res,rej)=>{ const url=URL.createObjectURL(file); const img=new Image(); img.onload=()=>{URL.revokeObjectURL(url); res(img);}; img.onerror=e=>{URL.revokeObjectURL(url); rej(e);}; img.src=url; }); }
+function canvasToBlob(canvas,type,quality){ return new Promise(res=>canvas.toBlob(res,type,quality)); }
+function blobToDataURL(blob){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=e=>res(e.target.result); r.onerror=rej; r.readAsDataURL(blob); }); }
 
-function fitContain(w, h, maxW, maxH) {
-  let ratio = Math.min(maxW / w, maxH / h);
-  if (!isFinite(ratio) || ratio > 1) ratio = 1;
-  return { targetW: Math.round(w * ratio), targetH: Math.round(h * ratio) };
-}
-
-function loadHTMLImage(file) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
-    img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
-    img.src = url;
-  });
-}
-
-function canvasToBlob(canvas, type, quality) {
-  return new Promise(resolve => canvas.toBlob(resolve, type, quality));
-}
-
-function blobToDataURL(blob){
-  return new Promise((res, rej)=>{
-    const r = new FileReader();
-    r.onload = e => res(e.target.result);
-    r.onerror = rej;
-    r.readAsDataURL(blob);
-  });
-}
-
-/* ===== helpers для шаринга ===== */
-function dataUrlToBlob(dataUrl) {
-  const [hdr, b64] = dataUrl.split(',');
+/* ===== share helpers ===== */
+function dataUrlToBlob(dataUrl){
+  const [hdr,b64] = dataUrl.split(',');
   const mime = (hdr.match(/data:(.*?);base64/)||[])[1] || 'application/octet-stream';
-  const bin = atob(b64);
-  const arr = new Uint8Array(bin.length);
-  for (let i=0; i<bin.length; i++) arr[i] = bin.charCodeAt(i);
-  return new Blob([arr], { type: mime });
+  const bin = atob(b64); const arr = new Uint8Array(bin.length);
+  for (let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+  return new Blob([arr],{type:mime});
 }
-
-async function uploadToBucket(file) {
+async function uploadToBucket(file){
   const up = await awStorage.createFile(BUCKET_ID, Appwrite.ID.unique(), file);
   return `${APPWRITE_ENDPOINT}/storage/buckets/${BUCKET_ID}/files/${up.$id}/view?project=${APPWRITE_PROJECT}`;
 }
+function extractCssUrl(v){ if(!v) return null; const m=v.match(/url\(["']?(.*?)["']?\)/i); return m?m[1]:null; }
+function nanoid(n=22){ const ABC='0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'; let s=''; crypto.getRandomValues(new Uint32Array(n)).forEach(v=>s+=ABC[v%ABC.length]); return s; }
+async function copyToClipboard(text){ try{ await navigator.clipboard.writeText(text); } catch{} }
 
-function extractCssUrl(v) {
-  if (!v) return null;
-  const m = v.match(/url\(["']?(.*?)["']?\)/i);
-  return m ? m[1] : null;
-}
-
-function nanoid(n=22){
-  const ABC='0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  let s=''; crypto.getRandomValues(new Uint32Array(n)).forEach(v=> s+=ABC[v%ABC.length]);
-  return s;
-}
-
-async function ensureShareDoc() {
+// создаёт постоянный документ, если его ещё нет
+async function ensureShareDoc(){
   if (SHARE_TOKEN) return SHARE_TOKEN;
-
   const token = nanoid(22);
-  const now = Math.floor(Date.now() / 1000);
-  const projectJson = {
-    mode: MODE, baseW: BASE_W, baseH: BASE_H,
-    backgroundUrl: null, foreground: null, lottie: null, schemaVersion: 2
-  };
-
+  const now   = Math.floor(Date.now()/1000);
+  const projectJson = { mode:MODE, baseW:BASE_W, baseH:BASE_H, backgroundUrl:null, foreground:null, lottie:null, schemaVersion:2 };
   await awDB.createDocument(DB_ID, SHARES_TABLE, token, {
     projectJson: JSON.stringify(projectJson),
     createdAt: now,
     revoked: false
   });
-
   SHARE_TOKEN = token;
   localStorage.setItem(STORAGE_TOKEN_KEY, token);
   return token;
 }
 
-
-  SHARE_TOKEN = token;
-  localStorage.setItem(STORAGE_TOKEN_KEY, token);
-  return token;
-}
-/* ===== Поделиться ===== */
-document.getElementById('btnShare').addEventListener('click', ()=>{ if (READ_ONLY) return; createShare(); });
-
-document.getElementById('btnShare').addEventListener('click', () => {
+/* ===== Поделиться (обновляем документ) ===== */
+document.getElementById('btnShare').addEventListener('click', async ()=>{
   if (READ_ONLY) return;
-  createShare();
+  await createShare();
 });
 
-async function createShare() {
-  const token = await ensureShareDoc();            // гарантируем, что токен есть
-  try {
+async function createShare(){
+  const token = await ensureShareDoc();
+  try{
     // фон
     const bgRaw = extractCssUrl(bgLayer.style.backgroundImage);
     let backgroundUrl = null;
-    if (bgRaw) {
+    if (bgRaw){
       backgroundUrl = bgRaw.startsWith('data:')
-        ? await uploadToBucket(new File([dataUrlToBlob(bgRaw)], 'bg.webp', { type: 'image/webp' }))
+        ? await uploadToBucket(new File([dataUrlToBlob(bgRaw)], 'bg.webp', { type:'image/webp' }))
         : bgRaw;
     }
 
-    // передний слой
+    // foreground
     const fgImg = mount.querySelector('img');
     const fgSvg = mount.querySelector('svg');
     let foreground = null;
-
-    if (fgImg) {
+    if (fgImg){
       const src = fgImg.src;
       const url = src.startsWith('data:')
-        ? await uploadToBucket(new File([dataUrlToBlob(src)], 'foreground.webp', { type: 'image/webp' }))
+        ? await uploadToBucket(new File([dataUrlToBlob(src)], 'foreground.webp', { type:'image/webp' }))
         : src;
-      foreground = { type: 'image', url };
-    } else if (fgSvg) {
+      foreground = { type:'image', url };
+    } else if (fgSvg){
       const svgText = new XMLSerializer().serializeToString(fgSvg);
-      foreground = { type: 'svg', svgText };
+      foreground = { type:'svg', svgText };
     } else {
       alert('Добавь картинку или SVG перед шарингом.');
       return;
     }
 
-    if (!currentLottieJsonText) {
+    if (!currentLottieJsonText){
       alert('Добавь Lottie JSON перед шарингом.');
       return;
     }
 
-    // нормализованные доли лотти
     const lottieRect = rectNormLive || computeRectNormFromCurrent();
-
-    const lottieUrl  = await uploadToBucket(
-      new File([currentLottieJsonText], 'anim.json', { type: 'application/json' })
-    );
+    const lottieUrl  = await uploadToBucket(new File([currentLottieJsonText], 'anim.json', { type:'application/json' }));
 
     const projectJson = {
       mode: MODE, baseW: BASE_W, baseH: BASE_H,
       backgroundUrl,
       foreground,
-      lottie: { url: lottieUrl, rect: lottieRect, renderer: 'svg', loop: true, autoplay: true },
+      lottie: { url:lottieUrl, rect:lottieRect, renderer:'svg', loop:true, autoplay:true },
       schemaVersion: 2
     };
 
-    // ВАЖНО: обновляем существующий документ (НЕ createDocument)
-    await awDB.updateDocument(DB_ID, SHARES_TABLE, token, {
-      projectJson: JSON.stringify(projectJson)
-    });
-
-    const link = `${location.origin}${location.pathname}?share=${token}`;
-    await copyToClipboard(link);
-    alert('Ссылка скопирована:\n' + link);
-  } catch (err) {
-    console.error(err);
-    alert('Не получилось создать ссылку. Открой консоль для деталей.');
-  }
-}
-
-    // Lottie обязателен
-    if (!currentLottieJsonText) {
-      alert('Добавь Lottie JSON перед шарингом.');
-      return;
-    }
-
-    // нормализуем позицию/размер относительно текущего stage
-    const lottieRect = rectNormLive || computeRectNormFromCurrent();
-
-    const lottieUrl = await uploadToBucket(
-      new File([currentLottieJsonText], 'anim.json', { type: 'application/json' })
-    );
-
-    const projectJson = {
-      mode: MODE, baseW: BASE_W, baseH: BASE_H,
-      backgroundUrl,
-      foreground,
-      lottie: { url: lottieUrl, rect: lottieRect, renderer: 'svg', loop: true, autoplay: true },
-      schemaVersion: 2
-    };
-
-    // НЕ создаём новый документ — ОБНОВЛЯЕМ существующий
-    await awDB.updateDocument(DB_ID, SHARES_TABLE, token, {
-      projectJson: JSON.stringify(projectJson),
-      updatedAt: Math.floor(Date.now()/1000)
-    });
+    await awDB.updateDocument(DB_ID, SHARES_TABLE, token, { projectJson: JSON.stringify(projectJson) });
 
     const link = `${location.origin}${location.pathname}?share=${token}`;
     await copyToClipboard(link);
     alert('Ссылка скопирована:\n' + link);
   }catch(err){
     console.error(err);
-    alert('Не получилось обновить ссылку. Открой консоль для деталей.');
+    alert('Не получилось создать/обновить ссылку. Открой консоль для деталей.');
   }
 }
 
 /* ===== Открытие по ссылке ===== */
 (async function openShareIfAny(){
-  const params = new URLSearchParams(location.search);
-  const token = params.get('share');
+  const token = URL_TOKEN;
   if (!token) return;
 
   try{
-    // 1) Документ
     const doc = await awDB.getDocument(DB_ID, SHARES_TABLE, token);
-    const pj = JSON.parse(doc.projectJson);
+    const pj  = JSON.parse(doc.projectJson);
 
-    // 2) Режим и базовые размеры
     MODE   = pj.mode  || 'desktop';
     BASE_W = pj.baseW || 1440;
     BASE_H = pj.baseH || 800;
 
-    // 3) viewer
     setReadOnly(isViewer());
     openedFromShare = true;
 
-    // 4) фон
     bgLayer.style.backgroundImage = pj.backgroundUrl ? `url("${pj.backgroundUrl}")` : '';
 
-    // 5) построить фрейм раньше, чем монтировать контент
     layoutToBaseFrame();
+    clearMount(); clearLottie();
 
-    // 6) очистить и смонтировать передний слой
-    clearMount();
-    clearLottie();
-
-    if (pj.foreground?.type === 'image' && pj.foreground.url) {
+    if (pj.foreground?.type==='image' && pj.foreground.url){
       await mountForegroundImage(pj.foreground.url);
-    } else if (pj.foreground?.type === 'svg' && pj.foreground.svgText) {
+    } else if (pj.foreground?.type==='svg' && pj.foreground.svgText){
       mountSVG(pj.foreground.svgText);
     }
 
-    // 7) Lottie
-    if (pj.lottie?.url && pj.lottie?.rect) {
-      const resp = await fetch(pj.lottie.url, { cache: 'no-store' });
-      if (!resp.ok) throw new Error('Failed to fetch lottie json: ' + resp.status);
+    if (pj.lottie?.url && pj.lottie?.rect){
+      const resp = await fetch(pj.lottie.url, { cache:'no-store' });
+      if (!resp.ok) throw new Error('Failed to fetch lottie json: '+resp.status);
       const animJson = await resp.json();
 
       sharedRectNorm = pj.lottie.rect;
-      rectNormLive = sharedRectNorm;
+      rectNormLive   = sharedRectNorm;
 
       lottieWrap.classList.remove('hidden');
       applyLottieRectFromNorm(rectNormLive);
@@ -725,4 +565,7 @@ async function createShare() {
   }
 })();
 
+/* ===== utils for WEBP ===== */
+function extractCssUrl(v){ if(!v) return null; const m=v.match(/url\(["']?(.*?)["']?\)/i); return m?m[1]:null; }
 
+// ===== END
