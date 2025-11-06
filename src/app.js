@@ -518,21 +518,26 @@ async function ensureShareDoc() {
     backgroundUrl: null, foreground: null, lottie: null, schemaVersion: 2
   };
 
-  await awDB.createDocument(DB_ID, SHARES_TABLE, token, {
-    projectJson: JSON.stringify(projectJson),
-    createdAt: now,
-    revoked: false
-  });
+  await awDB.createDocument(
+    DB_ID,
+    SHARES_TABLE,
+    token,
+    {
+      projectJson: JSON.stringify(projectJson),
+      createdAt: now,
+      revoked: false
+    },
+    [
+      Appwrite.Permission.read(Appwrite.Role.any()),
+      Appwrite.Permission.update(Appwrite.Role.any())
+      // (delete не даём)
+    ]
+  );
 
   SHARE_TOKEN = token;
   localStorage.setItem(STORAGE_TOKEN_KEY, token);
   return token;
 }
-
-async function copyToClipboard(text){
-  try { await navigator.clipboard.writeText(text); } catch {}
-}
-
 /* ===== Поделиться ===== */
 document.getElementById('btnShare').addEventListener('click', ()=>{ if (READ_ONLY) return; createShare(); });
 
@@ -668,3 +673,4 @@ async function createShare(){
     alert('Ссылка недоступна или повреждена.');
   }
 })();
+
