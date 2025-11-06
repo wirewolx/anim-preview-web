@@ -205,7 +205,6 @@ bgFileInput.addEventListener('change', async e=>{
   bgLayer.style.backgroundImage=`url("${url}")`;
   clearLottie();
   bgFileInput.value='';
-  if(!framedMode) layoutToBaseFrame();
 });
 
 window.addEventListener('paste', async e=>{
@@ -457,14 +456,15 @@ async function createShare(){
       alert('Добавь Lottie JSON перед шарингом.');
       return;
     }
+    // нормализуем позицию/размер относительно текущего stage
     const lottieRect = (() => {
       const r = lottieWrap.getBoundingClientRect();
       const s = stage.getBoundingClientRect();
       return {
-        left: Math.round(r.left - s.left),
-        top: Math.round(r.top - s.top),
-        width: Math.round(r.width),
-        height: Math.round(r.height)
+        x: (r.left - s.left) / s.width,
+        y: (r.top  - s.top)  / s.height,
+        w: r.width  / s.width,
+        h: r.height / s.height
       };
     })();
     const lottieUrl = await uploadToBucket(new File([currentLottieJsonText], 'anim.json', { type: 'application/json' }));
@@ -512,7 +512,7 @@ async function createShare(){
     MODE = pj.mode || 'desktop';
     BASE_W = pj.baseW || 1440;
     BASE_H = pj.baseH || 800;
-
+    layoutToBaseFrame(); // важно: получить актуальные размеры stage
     clearMount(); clearLottie();
 
     // передний слой
@@ -524,24 +524,14 @@ async function createShare(){
 
     // Lottie
     if (pj.lottie?.url && pj.lottie?.rect) {
-      const resp = await fetch(pj.lottie.url);
-      const animJson = await resp.json();
-
-      lottieWrap.classList.remove('hidden');
-      const r = pj.lottie.rect;
-      Object.assign(lottieWrap.style, {
-        left: r.left + 'px', top: r.top + 'px',
-        width: r.width + 'px', height: r.height + 'px'
-      });
-
-      if(!framedMode) layoutToBaseFrame();
-
-      animation = lottie.loadAnimation({
-        container: lottieContainer,
-        renderer: pj.lottie.renderer || 'svg',
-        loop: pj.lottie.loop !== false,
-        autoplay: pj.lottie.autoplay !== false,
-        animationData: animJson
+    // применяем нормализованные x,y,w,h в пиксели текущего stage
+    const s = stage.getBoundingClientRect();
+    const r = pj.lottie.rect; // { x, y, w, h } в долях
+    Object.assign(lottieWrap.style, {
+      left:   (r.x * s.width)  + 'px',
+      top:    (r.y * s.height) + 'px',
+      width:  (r.w * s.width)  + 'px',
+      height: (r.h * s.height) + 'px'
       });
       currentLottieJsonText = JSON.stringify(animJson);
     }
@@ -550,4 +540,5 @@ async function createShare(){
     alert('Ссылка недоступна или повреждена.');
   }
 })();
+
 
