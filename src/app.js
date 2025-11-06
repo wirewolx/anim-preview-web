@@ -415,6 +415,11 @@ function blobToDataURL(blob){
     r.onerror = rej;
     r.readAsDataURL(blob);
   });
+  document.getElementById('btnShare').addEventListener('click', () => {
+  alert('OK, SDK подключён. Дальше добавим загрузку и ссылку.');
+});
+
 }
+
 
 
