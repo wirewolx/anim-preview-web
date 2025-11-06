@@ -54,9 +54,9 @@ function setReadOnly(on){
   READ_ONLY = !!on;
   
   // скрываем панели редактирования
-  controls.style.display = on ? 'none' : 'flex';
-  dropzone.style.display = on ? 'none' : 'grid';
-  
+  if (controls) controls.style.display = on ? 'none' : 'flex';
+  if (dropzone) dropzone.style.display = on ? 'none' : 'grid';
+
   // отключаем загрузку
   bgFileInput.disabled = on;
   assetFileInput.disabled = on;
@@ -619,5 +619,6 @@ async function createShare(){
     alert('Ссылка недоступна или повреждена.');
   }
 })();
+
 
 
