@@ -52,22 +52,23 @@ function resetLottieUI(){
 }
 function setReadOnly(on){
   READ_ONLY = !!on;
-
-  // скрыть/выключить элементы редактирования
+  
+  // скрываем панели редактирования
   controls.style.display = on ? 'none' : 'flex';
-  dropzone.style.pointerEvents = on ? 'none' : 'auto';
-
-  // отключаем инпуты и кнопки редактирования
+  dropzone.style.display = on ? 'none' : 'grid';
+  
+  // отключаем загрузку
   bgFileInput.disabled = on;
   assetFileInput.disabled = on;
   lottieFileInput.disabled = on;
-
+  
+  // скрываем кнопки Очистить / Поделиться
   const btnShare = document.getElementById('btnShare');
   const btnClear = document.getElementById('btnClear');
-  if (btnShare) btnShare.disabled = on;
-  if (btnClear) btnClear.disabled = on;
-
-  // запретить drag/resize лотти (курсор + события)
+  if (btnShare) btnShare.style.display = on ? 'none' : 'inline-block';
+  if (btnClear) btnClear.style.display = on ? 'none' : 'inline-block';
+  
+  // отключаем взаимодействие с лотти
   lottieWrap.style.pointerEvents = on ? 'none' : 'auto';
 }
 function applyLottieRectFromNorm(rect){
@@ -618,4 +619,5 @@ async function createShare(){
     alert('Ссылка недоступна или повреждена.');
   }
 })();
+
 
