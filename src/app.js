@@ -22,7 +22,8 @@ function getLottieRect() {
     height: parseFloat(s.height) || 200
   };
 }
-// === image compress helper (WebP) ===
+
+// === image compress helpers (WebP) ===
 async function compressDataUrlToWebP(dataURL, maxW = 1280, maxH = 1280, quality = 0.75) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -43,17 +44,45 @@ async function compressDataUrlToWebP(dataURL, maxW = 1280, maxH = 1280, quality 
     img.src = dataURL;
   });
 }
+
+// Пытаемся загрузить URL-картинку и сжать (если CORS разрешит). Иначе кидаем ошибку.
+async function urlToCompressedWebP(url, maxW = 1280, maxH = 1280, quality = 0.75) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      let { width, height } = img;
+      const k = Math.min(1, maxW / width, maxH / height);
+      if (k < 1) { width = Math.round(width * k); height = Math.round(height * k); }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      try {
+        ctx.drawImage(img, 0, 0, width, height);
+        const out = canvas.toDataURL('image/webp', quality);
+        resolve(out);
+      } catch (e) {
+        reject(e);
+      }
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
 async function shareCreateLink() {
   // 1) собираем состояние
   let bg = getBgUrl() || null;
   let mountState = getMountState();
 
-  // 2) сжимаем фон, если это dataURL
+  // 2) сжимаем фон, если это dataURL (подстраховка; обычно уже сжат)
   if (bg && bg.startsWith('data:image/')) {
     try { bg = await compressDataUrlToWebP(bg, 1280, 1280, 0.75); } catch {}
   }
 
-  // 3) сжимаем foreground IMG, если это dataURL
+  // 3) сжимаем foreground IMG, если это dataURL (подстраховка; обычно уже сжат)
   if (mountState && mountState.type === 'img' && mountState.data && mountState.data.startsWith('data:image/')) {
     try { mountState = { ...mountState, data: await compressDataUrlToWebP(mountState.data, 1280, 1280, 0.75) }; } catch {}
   }
@@ -82,7 +111,7 @@ async function shareCreateLink() {
       headers: {
         "Content-Type": "application/json",
         "X-Master-Key": "$2a$10$FvoTg452fwA4QAw4/b1IBO8zW9uW6GkTeKn6oK3L3vdaxVysBmWv6",   // <-- вставь свой ключ
-        "X-Bin-Private": "false"          // публичный: чтение без ключа
+        "X-Bin-Private": "false"      // публичный: чтение без ключа
       },
       body: raw
     });
@@ -110,6 +139,7 @@ async function shareCreateLink() {
     alert('Ошибка сети при создании ссылки.');
   }
 }
+
 // === DOM refs ===
 const dropzone = document.getElementById('dropzone');
 const controls = document.getElementById('controls');
@@ -280,9 +310,22 @@ assetFileInput.addEventListener('change', async e=>{
   const f=e.target.files?.[0]; if(!f) return;
   clearLottie();
   try{
-    if(isSVGFile(f)){ mountSVG(await readFileAsText(f)); }
-    else if(isRasterImageFile(f)){ await mountForegroundImage(await readFileAsDataURL(f)); }
-  }catch{ alert('Ошибка загрузки.'); }
+    if(isSVGFile(f)){
+      mountSVG(await readFileAsText(f));
+    } else if(isRasterImageFile(f)){
+      // Сжимаем сразу перед монтированием foreground
+      const raw = await readFileAsDataURL(f);
+      let compressed = raw;
+      try {
+        compressed = await compressDataUrlToWebP(raw, 1280, 1280, 0.75);
+      } catch (err) {
+        console.warn('FG compress failed, using original:', err);
+      }
+      await mountForegroundImage(compressed);
+    }
+  }catch{
+    alert('Ошибка загрузки.');
+  }
   assetFileInput.value='';
 });
 
@@ -292,31 +335,19 @@ bgFileInput.addEventListener('change', async (e) => {
   if (!f) return;
 
   try {
-    // 1) читаем выбранный файл как dataURL
     const raw = await readFileAsDataURL(f);
-
-    // 2) сразу сжимаем (при необходимости подкрути размеры/качество)
-    const compressed = await compressDataUrlToWebP(
-      raw,
-      1280,  // max ширина
-      1280,  // max высота
-      0.75   // качество (0..1)
-    );
-
-    // 3) ставим УЖЕ сжатый фон
+    const compressed = await compressDataUrlToWebP(raw, 1280, 1280, 0.75);
     bgLayer.style.backgroundImage = `url("${compressed}")`;
-
-    // 4) прочистка + перевод в рамочный режим, как было
     clearLottie();
     if (!framedMode) layoutToBaseFrame();
   } catch (err) {
     console.error('BG compress error:', err);
     alert('Не удалось сжать фоновое изображение.');
   } finally {
-    // сбрасываем инпут, чтобы можно было сразу выбрать тот же файл снова
     bgFileInput.value = '';
   }
 });
+
 /* ===== Lottie load / drag / resize / delete ===== */
 lottieFileInput.addEventListener('change', e=>{
   const f=e.target.files?.[0]; if(!f) return;
@@ -466,6 +497,67 @@ layoutToEmpty();
     });
 })();
 
+/* ===== Paste (Ctrl+V) — сжатие изображений ===== */
+window.addEventListener('paste', async e=>{
+  const items = e.clipboardData?.items || [];
 
+  // SVG из буфера как файл
+  for (const it of items) {
+    if (it.type === 'image/svg+xml') {
+      const f = it.getAsFile();
+      if (f) {
+        clearLottie();
+        mountSVG(await readFileAsText(f));
+        e.preventDefault();
+        return;
+      }
+    }
+  }
 
+  // Текст из буфера: data:image или http(s) URL на картинку
+  const text = e.clipboardData?.getData('text/plain');
+  if (text && /<svg[\s>]/i.test(text)) {
+    clearLottie();
+    mountSVG(text);
+    e.preventDefault();
+    return;
+  }
 
+  if (text && (text.startsWith('data:image/') || /^(https?:\/\/).+\.(png|jpe?g|webp|gif)(\?.*)?$/i.test(text)) ) {
+    clearLottie();
+    let src = text;
+    try {
+      if (text.startsWith('data:image/')) {
+        // сжимаем сразу
+        src = await compressDataUrlToWebP(text, 1280, 1280, 0.75);
+      } else {
+        // пытаемся сжать URL (CORS), иначе оставим как есть
+        src = await urlToCompressedWebP(text, 1280, 1280, 0.75);
+      }
+    } catch (err) {
+      console.warn('URL/data compression failed, using original:', err);
+      src = text;
+    }
+    await mountForegroundImage(src);
+    e.preventDefault();
+    return;
+  }
+
+  // Вставка файла-изображения из буфера
+  for (const it of items) {
+    if (it.kind === 'file' && it.type.startsWith('image/')) {
+      const f = it.getAsFile();
+      const dataURL = await readFileAsDataURL(f);
+      clearLottie();
+      let compressed = dataURL;
+      try {
+        compressed = await compressDataUrlToWebP(dataURL, 1280, 1280, 0.75);
+      } catch (err) {
+        console.warn('Clipboard image compression failed, using original:', err);
+      }
+      await mountForegroundImage(compressed);
+      e.preventDefault();
+      return;
+    }
+  }
+});
