@@ -1,7 +1,7 @@
 // === Appwrite init ===
 const APPWRITE_ENDPOINT = 'https://fra.cloud.appwrite.io/v1';
 const APPWRITE_PROJECT  = '690ca6e20020dbc4f584'; // без <>
-const DB_ID = 'main';
+const DB_ID = '690ca7cd0022f8fe8ff8';
 const SHARES_TABLE = 'shares';
 const BUCKET_ID = 'project-assets';
 
@@ -550,3 +550,4 @@ async function createShare(){
     alert('Ссылка недоступна или повреждена.');
   }
 })();
+
