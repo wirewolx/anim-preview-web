@@ -1,6 +1,6 @@
 // === Appwrite init ===
 const APPWRITE_ENDPOINT = 'https://fra.cloud.appwrite.io/v1';
-const APPWRITE_PROJECT  = '<690ca6e20020dbc4f584>';
+const APPWRITE_PROJECT  = '690ca6e20020dbc4f584'; // без <>
 const DB_ID = 'main';
 const SHARES_TABLE = 'shares';
 const BUCKET_ID = 'project-assets';
@@ -31,6 +31,7 @@ const lottieClose = document.getElementById('lottieClose');
 const lottieContainer = document.getElementById('lottie');
 
 let animation = null;
+let currentLottieJsonText = null; // ★ сохраняем исходный Lottie JSON
 let framedMode = false;
 let MODE = 'desktop'; // 'desktop' | 'mobile'
 let BASE_W = 1440, BASE_H = 800;
@@ -44,7 +45,7 @@ function resetLottieUI(){
   window.getSelection?.().removeAllRanges?.();
 }
 
-// ★ Новый: полный сброс размеров/позиции лотти-контейнера к дефолту
+// сброс размеров/позиции лотти-контейнера к дефолту
 function resetLottieRectToDefaults(){
   lottieWrap.style.left = '40px';
   lottieWrap.style.top = '40px';
@@ -52,14 +53,15 @@ function resetLottieRectToDefaults(){
   lottieWrap.style.height = '200px';
 }
 
-// Новая универсальная очистка Lottie (усиленная)
+// очистка Lottie
 function clearLottie(){
   if (animation) { animation.destroy(); animation = null; }
   lottieContainer.innerHTML = '';
   resetLottieUI();
-  resetLottieRectToDefaults(); // ★ гарантируем, что следующий лотти появится в видимой области
+  resetLottieRectToDefaults();
   lottieWrap.classList.add('hidden');
   lottieFileInput.value = '';
+  currentLottieJsonText = null;
 }
 
 function parseNumberWithUnits(v){ if(v==null) return null; const n=parseFloat(String(v).replace(',','.')); return isFinite(n)?n:null; }
@@ -84,42 +86,33 @@ function setDesktopBase(){
   MODE='desktop';
   BASE_W=1440; BASE_H=800;
   tabTitle.textContent='Design Preview';
-  browserEl.classList.remove('mobile');        // ★ mobile frame toggle
+  browserEl.classList.remove('mobile');
 }
 function setMobileBaseFromIntrinsic(w, h){
   MODE='mobile';
-  const targetW = clamp(Math.round(w), 360, 475); // уважаем диапазон 360–475
+  const targetW = clamp(Math.round(w), 360, 475);
   const scale = targetW / w;
   BASE_W = targetW;
-  // ★ ограничение высоты для мобилки: минимум 600, максимум 900
   BASE_H = clamp(Math.round(h * scale), 600, 900);
   tabTitle.textContent = 'Mobile Preview';
-  browserEl.classList.add('mobile');            // ★ mobile frame toggle
+  browserEl.classList.add('mobile');
 }
 function detectAndSetModeByWidth(w, h){
-  // 1) точный мобильный диапазон
   if (w >= 360 && w <= 475) { setMobileBaseFromIntrinsic(w, h); return; }
-
-  // 2) fallback для портретных @2x/@3x скринов при Ctrl+V (без «умного» общего детектора)
-  const portrait = h >= w * 1.2; // мягкий порог портретности
+  const portrait = h >= w * 1.2;
   if (portrait) {
-    // частый случай: 360–475 @2x => 720–950
     if (w >= 700 && w <= 950) { setMobileBaseFromIntrinsic(w / 2, h / 2); return; }
-    // ещё случай: 360–475 @3x => 1080–1425
     if (w >= 1050 && w <= 1500) { setMobileBaseFromIntrinsic(w / 3, h / 3); return; }
   }
-
-  // иначе — десктоп
   setDesktopBase();
 }
 
-/* ===== layout (учитываем левую панель) ===== */
+/* ===== layout ===== */
 function layoutToBaseFrame() {
   const g = 32;
-  const ch = (MODE==='mobile' ? 0 : 64); // ★ для телефона не учитываем верхнюю «хром»-высоту
+  const ch = (MODE==='mobile' ? 0 : 64);
   const sidebar = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w')) || 220;
 
-  // доступная ширина уменьшается на панель + промежуток (16px)
   const availW = window.innerWidth - g*2 - sidebar - 16;
   const availH = window.innerHeight - g*2;
   const s = Math.min(availW/BASE_W, (availH - ch)/BASE_H);
@@ -127,15 +120,10 @@ function layoutToBaseFrame() {
   const sh = Math.round(BASE_H*s);
   const bw = sw, bh = Math.round(ch + sh);
 
-  // позиционируем «устройство» с учётом панели слева
   const left = Math.max(g + sidebar + 16, Math.round((window.innerWidth - bw)/2));
   const top  = Math.max(g, Math.round((window.innerHeight - bh)/2));
 
-  Object.assign(browserEl.style, {
-    width: bw + 'px', height: bh + 'px',
-    left: left + 'px', top: top + 'px',
-    right: 'auto', bottom: 'auto'
-  });
+  Object.assign(browserEl.style, { width: bw + 'px', height: bh + 'px', left: left + 'px', top: top + 'px', right: 'auto', bottom: 'auto' });
   Object.assign(stage.style, { flex:'0 0 auto', height: sh + 'px', width: '100%' });
 
   framedMode = true;
@@ -145,7 +133,6 @@ function layoutToBaseFrame() {
 }
 
 function layoutToEmpty() {
-  // в пустом режиме панель скрыта, браузер растянут (но мы всё равно оставим сдвиг по CSS)
   Object.assign(browserEl.style, {
     left: 'calc(var(--gutter) + var(--sidebar-w) + 16px)',
     top: 'var(--gutter)', right: 'var(--gutter)', bottom: 'var(--gutter)',
@@ -165,11 +152,10 @@ function mountSVG(svgText){
   const svg=doc.documentElement.tagName.toLowerCase()==='svg'?doc.documentElement:doc.querySelector('svg');
   if(!svg){ alert('Не удалось прочитать SVG.'); return; }
 
-  // Определяем режим по intrinsic ширине
   const size = getSvgIntrinsicSize(svg);
   if (size) detectAndSetModeByWidth(size.w, size.h); else setDesktopBase();
 
-  clearLottie();                 // <— очищаем лотти при новой вставке
+  clearLottie();
   clearMount(); ensureViewBox(svg);
   svg.removeAttribute('width'); svg.removeAttribute('height'); svg.removeAttribute('style');
   svg.setAttribute('preserveAspectRatio','xMidYMin slice');
@@ -182,11 +168,8 @@ async function mountForegroundImage(dataURL){
   return new Promise((res,rej)=>{
     const img=new Image();
     img.onload=()=>{
-      clearLottie(); // <— очищаем лотти перед пересчётом фрейма
-
-      // Режим: мобильный, если ширина 360–475 (или портретный @2x/@3x fallback), иначе — десктоп
+      clearLottie();
       detectAndSetModeByWidth(img.naturalWidth, img.naturalHeight);
-
       clearMount();
       Object.assign(img.style,{objectFit:'cover',objectPosition:'top center',width:'100%',height:'100%',position:'absolute',inset:'0'});
       mount.appendChild(img);
@@ -202,69 +185,61 @@ dropzone.addEventListener('click', () => assetFileInput.click());
 
 assetFileInput.addEventListener('change', async e=>{
   const f=e.target.files?.[0]; if(!f) return;
-  clearLottie(); // ★ гарантируем удаление лотти при КАЖДОЙ новой загрузке картинки/SVG
+  clearLottie();
   try{
     if(isSVGFile(f)){
-      // SVG — без сжатия
       mountSVG(await readFileAsText(f));
     } else if(isRasterImageFile(f)){
-      // Растр — сжать в WebP и уменьшить
       const webpBlob = await compressToWebP(f, { maxW: MAX_W, maxH: MAX_H, quality: WEBP_QUALITY });
       const dataURL = await blobToDataURL(webpBlob);
       await mountForegroundImage(dataURL);
       console.log(`Сжато (file): ${(f.size/1024).toFixed(1)}KB → ${(webpBlob.size/1024).toFixed(1)}KB`);
     }
   }catch{ alert('Ошибка загрузки.'); }
-  assetFileInput.value=''; // можно снова выбрать тот же файл
+  assetFileInput.value='';
 });
 
-// фон: просто задаём bgLayer
 bgFileInput.addEventListener('change', async e=>{
   const f=e.target.files?.[0]; if(!f) return;
   const url=await readFileAsDataURL(f);
   bgLayer.style.backgroundImage=`url("${url}")`;
-  clearLottie(); // <— очищаем лотти при смене фона (чтобы потом можно было загрузить заново)
+  clearLottie();
   bgFileInput.value='';
   if(!framedMode) layoutToBaseFrame();
 });
 
 window.addEventListener('paste', async e=>{
   const items=e.clipboardData?.items||[];
-  // 1) Прямой SVG как файл из буфера
   for(const it of items){
     if(it.type==='image/svg+xml'){
       const f=it.getAsFile();
       if(f){
-        clearLottie(); // <— перед монтированием
+        clearLottie();
         mountSVG(await readFileAsText(f));
         e.preventDefault();
         return;
       }
     }
   }
-  // 2) Текстовый SVG
   const text=e.clipboardData?.getData('text/plain');
   if(text && /<svg[\s>]/i.test(text)){
-    clearLottie(); // <— перед монтированием
+    clearLottie();
     mountSVG(text);
     e.preventDefault();
     return;
   }
-  // 3) dataURL или http(s)-ссылка на картинку
   if(text && (text.startsWith('data:image/') || /^(https?:\/\/).+\.(png|jpe?g|webp|gif)(\?.*)?$/i.test(text)) ){
-    clearLottie(); // <— перед монтированием
+    clearLottie();
     await mountForegroundImage(text);
     e.preventDefault();
     return;
   }
-  // 4) Растровая картинка как файл — СЖАТИЕ тут
   for(const it of items){
     if(it.kind==='file' && it.type.startsWith('image/')){
       const f=it.getAsFile();
-      // Сжать в WebP и уменьшить, потом монтировать
       const webpBlob = await compressToWebP(f, { maxW: MAX_W, maxH: MAX_H, quality: WEBP_QUALITY });
       const dataURL = await blobToDataURL(webpBlob);
-      clearLottie(); // <— перед монтированием
+      clearLottie();
       await mountForegroundImage(dataURL);
       console.log(`Сжато (paste): ${(f.size/1024).toFixed(1)}KB → ${(webpBlob.size/1024).toFixed(1)}KB`);
       e.preventDefault();
@@ -278,16 +253,17 @@ lottieFileInput.addEventListener('change', e=>{
   const f=e.target.files?.[0]; if(!f) return;
   const r=new FileReader();
   r.onload=ev=>{
-    const json=JSON.parse(ev.target.result);
+    currentLottieJsonText = ev.target.result; // ★ сохраняем текст
+    const json=JSON.parse(currentLottieJsonText);
     if(animation) animation.destroy();
     lottieContainer.innerHTML='';
-    resetLottieRectToDefaults(); // ★ каждый новый лотти стартует в дефолтном размере/позиции
+    resetLottieRectToDefaults();
     lottieWrap.classList.remove('hidden');
     if(!framedMode) layoutToBaseFrame();
     animation=lottie.loadAnimation({container:lottieContainer,renderer:'svg',loop:true,autoplay:true,animationData:json});
   };
   r.readAsText(f);
-  lottieFileInput.value=''; // выбрать тот же файл снова
+  lottieFileInput.value='';
 });
 
 let dragging=false, dx=0, dy=0;
@@ -345,7 +321,7 @@ lottieClose.addEventListener('click', ()=>{ clearLottie(); });
 /* overlay */
 document.getElementById('btnClear').addEventListener('click', ()=>{
   clearMount();
-  clearLottie();                 // вместо ручной чистки
+  clearLottie();
   bgLayer.style.backgroundImage='';
   setDesktopBase();
   layoutToEmpty(); lottieFileInput.value=''; assetFileInput.value=''; bgFileInput.value='';
@@ -357,13 +333,12 @@ window.addEventListener('resize', ()=>{ if(framedMode) layoutToBaseFrame(); });
 setDesktopBase();
 layoutToEmpty();
 
-/* ===== СЖАТИЕ В WEBP (встроено в загрузку/вставку) ===== */
+/* ===== СЖАТИЕ В WEBP ===== */
 const WEBP_QUALITY = 0.82;     // 0..1
-const MAX_W = 1920;            // макс. ширина после ресайза
-const MAX_H = 1080;            // макс. высота после ресайза
+const MAX_W = 1920;
+const MAX_H = 1080;
 
 async function compressToWebP(file, { maxW, maxH, quality }) {
-  // пытаемся учесть EXIF-ориентацию
   let bitmap;
   try {
     bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
@@ -371,18 +346,14 @@ async function compressToWebP(file, { maxW, maxH, quality }) {
     const img = await loadHTMLImage(file);
     bitmap = await createImageBitmap(img);
   }
-
   const { targetW, targetH } = fitContain(bitmap.width, bitmap.height, maxW, maxH);
-
   const canvas = document.createElement('canvas');
   canvas.width  = targetW;
   canvas.height = targetH;
-
   const ctx = canvas.getContext('2d', { alpha: true });
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(bitmap, 0, 0, targetW, targetH);
-
   const blob = await canvasToBlob(canvas, 'image/webp', quality);
   if (!blob) throw new Error('Canvas toBlob вернул null');
   return blob;
@@ -390,7 +361,7 @@ async function compressToWebP(file, { maxW, maxH, quality }) {
 
 function fitContain(w, h, maxW, maxH) {
   let ratio = Math.min(maxW / w, maxH / h);
-  if (!isFinite(ratio) || ratio > 1) ratio = 1; // не увеличиваем
+  if (!isFinite(ratio) || ratio > 1) ratio = 1;
   return { targetW: Math.round(w * ratio), targetH: Math.round(h * ratio) };
 }
 
@@ -415,11 +386,167 @@ function blobToDataURL(blob){
     r.onerror = rej;
     r.readAsDataURL(blob);
   });
-  document.getElementById('btnShare').addEventListener('click', () => {
-  alert('OK, SDK подключён. Дальше добавим загрузку и ссылку.');
-});
-
 }
 
+/* ===== helpers для шаринга ===== */
+function dataUrlToBlob(dataUrl) {
+  const [hdr, b64] = dataUrl.split(',');
+  const mime = (hdr.match(/data:(.*?);base64/)||[])[1] || 'application/octet-stream';
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i=0; i<bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
 
+async function uploadToBucket(file) {
+  const up = await awStorage.createFile(BUCKET_ID, Appwrite.ID.unique(), file);
+  return `${APPWRITE_ENDPOINT}/storage/buckets/${BUCKET_ID}/files/${up.$id}/view?project=${APPWRITE_PROJECT}`;
+}
 
+function extractCssUrl(v) {
+  if (!v) return null;
+  const m = v.match(/url\(["']?(.*?)["']?\)/i);
+  return m ? m[1] : null;
+}
+
+function nanoid(n=22){
+  const ABC='0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let s=''; crypto.getRandomValues(new Uint32Array(n)).forEach(v=> s+=ABC[v%ABC.length]);
+  return s;
+}
+
+async function copyToClipboard(text){
+  try { await navigator.clipboard.writeText(text); } catch {}
+}
+
+/* ===== Поделиться ===== */
+document.getElementById('btnShare').addEventListener('click', createShare);
+
+async function createShare(){
+  try{
+    // фон
+    const bgRaw = extractCssUrl(bgLayer.style.backgroundImage);
+    let backgroundUrl = null;
+    if (bgRaw) {
+      backgroundUrl = bgRaw.startsWith('data:')
+        ? await uploadToBucket(new File([dataUrlToBlob(bgRaw)], 'bg.webp', { type: 'image/webp' }))
+        : bgRaw;
+    }
+
+    // передний слой
+    const fgImg = mount.querySelector('img');
+    const fgSvg = mount.querySelector('svg');
+    let foreground = null;
+
+    if (fgImg) {
+      const src = fgImg.src;
+      const url = src.startsWith('data:')
+        ? await uploadToBucket(new File([dataUrlToBlob(src)], 'foreground.webp', { type: 'image/webp' }))
+        : src;
+      foreground = { type: 'image', url };
+    } else if (fgSvg) {
+      const svgText = new XMLSerializer().serializeToString(fgSvg);
+      foreground = { type: 'svg', svgText };
+    } else {
+      alert('Добавь картинку или SVG перед шарингом.');
+      return;
+    }
+
+    // Lottie обязателен
+    if (!currentLottieJsonText) {
+      alert('Добавь Lottie JSON перед шарингом.');
+      return;
+    }
+    const lottieRect = (() => {
+      const r = lottieWrap.getBoundingClientRect();
+      const s = stage.getBoundingClientRect();
+      return {
+        left: Math.round(r.left - s.left),
+        top: Math.round(r.top - s.top),
+        width: Math.round(r.width),
+        height: Math.round(r.height)
+      };
+    })();
+    const lottieUrl = await uploadToBucket(new File([currentLottieJsonText], 'anim.json', { type: 'application/json' }));
+
+    const projectJson = {
+      mode: MODE, baseW: BASE_W, baseH: BASE_H,
+      backgroundUrl,
+      foreground,
+      lottie: { url: lottieUrl, rect: lottieRect, renderer: 'svg', loop: true, autoplay: true },
+      schemaVersion: 2
+    };
+
+    const token = nanoid(22);
+    const now = Math.floor(Date.now()/1000);
+
+    await awDB.createDocument(DB_ID, SHARES_TABLE, token, {
+      projectJson: JSON.stringify(projectJson), // колонка string
+      createdAt: now,
+      revoked: false
+    });
+
+    const link = `${location.origin}${location.pathname}?share=${token}`;
+    await copyToClipboard(link);
+    alert('Ссылка скопирована:\n' + link);
+  }catch(err){
+    console.error(err);
+    alert('Не получилось создать ссылку. Открой консоль для деталей.');
+  }
+}
+
+/* ===== Открытие по ссылке ===== */
+(async function openShareIfAny(){
+  const params = new URLSearchParams(location.search);
+  const token = params.get('share');
+  if (!token) return;
+
+  try{
+    const doc = await awDB.getDocument(DB_ID, SHARES_TABLE, token);
+    const pj = JSON.parse(doc.projectJson);
+
+    // фон
+    bgLayer.style.backgroundImage = pj.backgroundUrl ? `url("${pj.backgroundUrl}")` : '';
+
+    // режим
+    MODE = pj.mode || 'desktop';
+    BASE_W = pj.baseW || 1440;
+    BASE_H = pj.baseH || 800;
+
+    clearMount(); clearLottie();
+
+    // передний слой
+    if (pj.foreground?.type === 'image' && pj.foreground.url) {
+      await mountForegroundImage(pj.foreground.url);
+    } else if (pj.foreground?.type === 'svg' && pj.foreground.svgText) {
+      mountSVG(pj.foreground.svgText);
+    }
+
+    // Lottie
+    if (pj.lottie?.url && pj.lottie?.rect) {
+      const resp = await fetch(pj.lottie.url);
+      const animJson = await resp.json();
+
+      lottieWrap.classList.remove('hidden');
+      const r = pj.lottie.rect;
+      Object.assign(lottieWrap.style, {
+        left: r.left + 'px', top: r.top + 'px',
+        width: r.width + 'px', height: r.height + 'px'
+      });
+
+      if(!framedMode) layoutToBaseFrame();
+
+      animation = lottie.loadAnimation({
+        container: lottieContainer,
+        renderer: pj.lottie.renderer || 'svg',
+        loop: pj.lottie.loop !== false,
+        autoplay: pj.lottie.autoplay !== false,
+        animationData: animJson
+      });
+      currentLottieJsonText = JSON.stringify(animJson);
+    }
+  }catch(e){
+    console.error(e);
+    alert('Ссылка недоступна или повреждена.');
+  }
+})();
