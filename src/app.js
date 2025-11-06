@@ -1,6 +1,6 @@
 // === Appwrite init ===
 const APPWRITE_ENDPOINT = 'https://fra.cloud.appwrite.io/v1';
-const APPWRITE_PROJECT  = '<YOUR_PROJECT_ID>';
+const APPWRITE_PROJECT  = '<690ca6e20020dbc4f584>';
 const DB_ID = 'main';
 const SHARES_TABLE = 'shares';
 const BUCKET_ID = 'project-assets';
@@ -416,4 +416,5 @@ function blobToDataURL(blob){
     r.readAsDataURL(blob);
   });
 }
+
 
