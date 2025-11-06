@@ -177,8 +177,8 @@ function layoutToBaseFrame() {
 
   framedMode = true;
   browserEl.style.display = 'flex';
-  controls.style.display = 'flex';
-  dropzone.style.display = 'none';
+  controls.style.display = READ_ONLY ? 'none' : 'flex';
+  dropzone.style.display = READ_ONLY ? 'none' : 'grid';
 }
 
 function layoutToEmpty() {
@@ -191,8 +191,9 @@ function layoutToEmpty() {
 
   framedMode = false;
   browserEl.style.display = 'none';
-  controls.style.display = 'none';
-  dropzone.style.display = 'grid';
+  controls.style.display = READ_ONLY ? 'none' : 'flex';
+  dropzone.style.display = READ_ONLY ? 'none' : 'grid';
+
 }
 
 /* ===== mount image/SVG ===== */
@@ -579,6 +580,11 @@ async function createShare(){
     setReadOnly(true);       // <— зритель не редактирует
     openedFromShare = true;  // было уже у тебя, пусть остаётся
     layoutToBaseFrame();
+    MODE = pj.mode || 'desktop';
+    BASE_W = pj.baseW || 1440;
+    BASE_H = pj.baseH || 800;
+    layoutToBaseFrame();
+    setReadOnly(true); // <- зритель
 
     // 4) Сбрасываем текущее содержимое
     clearMount();
@@ -619,6 +625,7 @@ async function createShare(){
     alert('Ссылка недоступна или повреждена.');
   }
 })();
+
 
 
 
