@@ -31,6 +31,8 @@ const lottieClose = document.getElementById('lottieClose');
 const lottieContainer = document.getElementById('lottie');
 
 let animation = null;
+let sharedRectNorm = null;     // {x,y,w,h} в долях — для открытой шары
+let openedFromShare = false;   // флаг: мы в режиме просмотра по ссылке
 let currentLottieJsonText = null; // ★ сохраняем исходный Lottie JSON
 let framedMode = false;
 let MODE = 'desktop'; // 'desktop' | 'mobile'
@@ -44,7 +46,16 @@ function resetLottieUI(){
   document.body.style.cursor='';
   window.getSelection?.().removeAllRanges?.();
 }
-
+function applyLottieRectFromNorm(rect){
+  if (!rect) return;
+  const s = stage.getBoundingClientRect();
+  Object.assign(lottieWrap.style, {
+    left:   (rect.x * s.width)  + 'px',
+    top:    (rect.y * s.height) + 'px',
+    width:  (rect.w * s.width)  + 'px',
+    height: (rect.h * s.height) + 'px'
+  });
+}
 // сброс размеров/позиции лотти-контейнера к дефолту
 function resetLottieRectToDefaults(){
   lottieWrap.style.left = '40px';
@@ -272,14 +283,14 @@ lottieWrap.addEventListener('mousedown', e=>{
   const rect=lottieWrap.getBoundingClientRect(); dx=e.clientX-rect.left; dy=e.clientY-rect.top;
   lottieWrap.style.cursor='grabbing'; e.preventDefault();
 });
-window.addEventListener('mousemove', e=>{
-  if(!dragging) return;
-  const r=stage.getBoundingClientRect();
-  let x=e.clientX-r.left-dx, y=e.clientY-r.top-dy;
-  x=Math.max(0, Math.min(x, r.width - lottieWrap.offsetWidth));
-  y=Math.max(0, Math.min(y, r.height- lottieWrap.offsetHeight));
-  lottieWrap.style.left=x+'px'; lottieWrap.style.top=y+'px';
+window.addEventListener('resize', () => {
+  if (framedMode) layoutToBaseFrame();
+  // если открыты по ссылке — пересчитываем px из нормализованных долей
+  if (openedFromShare && sharedRectNorm) {
+    applyLottieRectFromNorm(sharedRectNorm);
+  }
 });
+
 
 const MIN_W=60, MIN_H=60; let resizing=null;
 function getCursorForDir(dir){return ({nw:'nwse-resize',se:'nwse-resize',ne:'nesw-resize',sw:'nesw-resize',n:'ns-resize',s:'ns-resize',w:'ew-resize',e:'ew-resize'})[dir]||'default';}
@@ -529,9 +540,23 @@ async function createShare(){
 
     // 6) Lottie (загружаем JSON, применяем нормализованные координаты, запускаем)
     if (pj.lottie?.url && pj.lottie?.rect) {
-      const resp = await fetch(pj.lottie.url, { cache: 'no-store' });
-      if (!resp.ok) throw new Error('Failed to fetch lottie json: ' + resp.status);
-      const animJson = await resp.json();
+    const resp = await fetch(pj.lottie.url, { cache: 'no-store' });
+    const animJson = await resp.json();
+    
+    openedFromShare = true;
+    sharedRectNorm = pj.lottie.rect;
+    
+    lottieWrap.classList.remove('hidden');
+    applyLottieRectFromNorm(sharedRectNorm);
+    
+    animation = lottie.loadAnimation({
+      container: lottieContainer,
+      renderer:  pj.lottie.renderer || 'svg',
+      loop:      pj.lottie.loop !== false,
+      autoplay:  pj.lottie.autoplay !== false,
+      animationData: animJson
+    });
+    currentLottieJsonText = JSON.stringify(animJson);
 
       // показываем контейнер
       lottieWrap.classList.remove('hidden');
@@ -563,6 +588,7 @@ async function createShare(){
     alert('Ссылка недоступна или повреждена.');
   }
 })();
+
 
 
 
