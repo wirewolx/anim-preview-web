@@ -61,12 +61,32 @@ let sharedRectNorm  = null;
 let rectNormLive    = null;
 
 /* ===== helpers ===== */
+// фон установлен?
+function hasBackground() {
+  return !!extractCssUrl(bgLayer.style.backgroundImage);
+}
+
+// включить/выключить панель редактирования по факту фона
+function updateEditingUIAvailability() {
+  const enabled = hasBackground() && !READ_ONLY;
+  dropzone.style.display = enabled ? 'grid' : 'none';
+  controls.style.display = enabled ? 'flex' : 'none';
+}
 function resetLottieUI(){
   dragging=false; resizing=null;
   lottieWrap.classList.remove('active');
   lottieWrap.style.cursor='grab';
   document.body.style.cursor='';
   window.getSelection?.().removeAllRanges?.();
+}
+function hasBackground() {
+  return !!extractCssUrl(bgLayer.style.backgroundImage);
+}
+
+function updateEditingUIAvailability() {
+  const enabled = hasBackground() && !READ_ONLY;
+  dropzone.style.display = enabled ? 'grid' : 'none';
+  controls.style.display = enabled ? 'flex' : 'none';
 }
 function setReadOnly(on){
   READ_ONLY = !!on;
@@ -267,6 +287,7 @@ bgFileInput.addEventListener('change', async e=>{
   const url=await readFileAsDataURL(f);
   bgLayer.style.backgroundImage=`url("${url}")`;
   clearLottie();
+  updateEditingUIAvailability();
   bgFileInput.value='';
 });
 
@@ -376,17 +397,25 @@ window.addEventListener('keydown', e=>{ if(e.key==='Escape'){ resetLottieUI(); }
 lottieClose.addEventListener('click', ()=>{ clearLottie(); });
 
 // ---- FIX: кнопка Очистить ----
-document.getElementById('btnClear').addEventListener('click', ()=>{
+document.getElementById('btnClear').addEventListener('click', () => {
   if (READ_ONLY) return;
+
+  // очистка контента
   clearMount();
   clearLottie();
   bgLayer.style.backgroundImage = '';
+
+  // вернуть базовые размеры/режим и пустой экран
   setDesktopBase();
   layoutToEmpty();
-  // сброс внутренних норм-координат
-  rectNormLive   = null;
-  sharedRectNorm = null;
-  openedFromShare = false;
+
+  // ОБЯЗАТЕЛЬНО: прячем панель, т.к. фона больше нет
+  updateEditingUIAvailability();
+
+  // сброс инпутов
+  lottieFileInput.value = '';
+  assetFileInput.value  = '';
+  bgFileInput.value     = '';
 });
 
 // ЕДИНСТВЕННЫЙ обработчик ресайза
@@ -525,6 +554,7 @@ async function createShare(){
     openedFromShare = true;
 
     bgLayer.style.backgroundImage = pj.backgroundUrl ? `url("${pj.backgroundUrl}")` : '';
+    updateEditingUIAvailability();
 
     layoutToBaseFrame();
     clearMount(); clearLottie();
@@ -561,3 +591,4 @@ async function createShare(){
     alert('Ссылка недоступна или повреждена.');
   }
 })();
+
