@@ -33,6 +33,7 @@ const lottieContainer = document.getElementById('lottie');
 let animation = null;
 let currentLottieJsonText = null; // исходный Lottie JSON (string)
 let framedMode = false;
+let READ_ONLY = false; // режим только просмотра
 let MODE = 'desktop'; // 'desktop' | 'mobile'
 let BASE_W = 1440, BASE_H = 800;
 
@@ -49,7 +50,26 @@ function resetLottieUI(){
   document.body.style.cursor='';
   window.getSelection?.().removeAllRanges?.();
 }
+function setReadOnly(on){
+  READ_ONLY = !!on;
 
+  // скрыть/выключить элементы редактирования
+  controls.style.display = on ? 'none' : 'flex';
+  dropzone.style.pointerEvents = on ? 'none' : 'auto';
+
+  // отключаем инпуты и кнопки редактирования
+  bgFileInput.disabled = on;
+  assetFileInput.disabled = on;
+  lottieFileInput.disabled = on;
+
+  const btnShare = document.getElementById('btnShare');
+  const btnClear = document.getElementById('btnClear');
+  if (btnShare) btnShare.disabled = on;
+  if (btnClear) btnClear.disabled = on;
+
+  // запретить drag/resize лотти (курсор + события)
+  lottieWrap.style.pointerEvents = on ? 'none' : 'auto';
+}
 function applyLottieRectFromNorm(rect){
   if (!rect) return;
   const s = stage.getBoundingClientRect();
@@ -209,9 +229,9 @@ async function mountForegroundImage(dataURL){
 }
 
 /* ===== inputs / paste ===== */
-dropzone.addEventListener('click', () => assetFileInput.click());
-
+dropzone.addEventListener('click', () => { if (READ_ONLY) return; assetFileInput.click(); });
 assetFileInput.addEventListener('change', async e=>{
+if (READ_ONLY) return;
   const f=e.target.files?.[0]; if(!f) return;
   clearLottie();
   try{
@@ -228,6 +248,7 @@ assetFileInput.addEventListener('change', async e=>{
 });
 
 bgFileInput.addEventListener('change', async e=>{
+  if (READ_ONLY) return;
   const f=e.target.files?.[0]; if(!f) return;
   const url=await readFileAsDataURL(f);
   bgLayer.style.backgroundImage=`url("${url}")`;
@@ -236,6 +257,7 @@ bgFileInput.addEventListener('change', async e=>{
 });
 
 window.addEventListener('paste', async e=>{
+if (READ_ONLY) return;
   const items=e.clipboardData?.items||[];
   for(const it of items){
     if(it.type==='image/svg+xml'){
@@ -277,6 +299,7 @@ window.addEventListener('paste', async e=>{
 
 /* ===== Lottie load / drag / resize / delete ===== */
 lottieFileInput.addEventListener('change', e=>{
+  if (READ_ONLY) return;
   const f=e.target.files?.[0]; if(!f) return;
   const r=new FileReader();
   r.onload=ev=>{
@@ -298,6 +321,7 @@ lottieFileInput.addEventListener('change', e=>{
 
 let dragging=false, dx=0, dy=0;
 lottieWrap.addEventListener('mousedown', e=>{
+if (READ_ONLY) return;
   if(e.target.classList.contains('handle') || e.target.id==='lottieClose') return;
   dragging=true; lottieWrap.classList.add('active');
   const rect=lottieWrap.getBoundingClientRect(); dx=e.clientX-rect.left; dy=e.clientY-rect.top;
@@ -333,6 +357,7 @@ function applyResize(e){
 }
 Array.from(lottieWrap.querySelectorAll('.handle')).forEach(h=>{
   h.addEventListener('mousedown', e=>{
+    if (READ_ONLY) return;
     const dir = Array.from(h.classList).find(c=>['nw','ne','sw','se','n','s','w','e'].includes(c));
     startResize(dir, e);
   });
@@ -353,6 +378,7 @@ window.addEventListener('keydown', (e)=>{ if(e.key==='Escape'){ resetLottieUI();
 lottieClose.addEventListener('click', ()=>{ clearLottie(); });
 /* overlay */
 document.getElementById('btnClear').addEventListener('click', ()=>{
+  if (READ_ONLY) return;
   clearMount();
   clearLottie();
   bgLayer.style.backgroundImage='';
@@ -461,7 +487,7 @@ async function copyToClipboard(text){
 }
 
 /* ===== Поделиться ===== */
-document.getElementById('btnShare').addEventListener('click', createShare);
+document.getElementById('btnShare').addEventListener('click', ()=>{ if (READ_ONLY) return; createShare(); });
 
 async function createShare(){
   try{
@@ -549,6 +575,8 @@ async function createShare(){
     MODE   = pj.mode  || 'desktop';
     BASE_W = pj.baseW || 1440;
     BASE_H = pj.baseH || 800;
+    setReadOnly(true);       // <— зритель не редактирует
+    openedFromShare = true;  // было уже у тебя, пусть остаётся
     layoutToBaseFrame();
 
     // 4) Сбрасываем текущее содержимое
@@ -590,3 +618,4 @@ async function createShare(){
     alert('Ссылка недоступна или повреждена.');
   }
 })();
+
