@@ -31,12 +31,15 @@ const lottieClose = document.getElementById('lottieClose');
 const lottieContainer = document.getElementById('lottie');
 
 let animation = null;
-let sharedRectNorm = null;     // {x,y,w,h} в долях — для открытой шары
-let openedFromShare = false;   // флаг: мы в режиме просмотра по ссылке
-let currentLottieJsonText = null; // ★ сохраняем исходный Lottie JSON
+let currentLottieJsonText = null; // исходный Lottie JSON (string)
 let framedMode = false;
 let MODE = 'desktop'; // 'desktop' | 'mobile'
 let BASE_W = 1440, BASE_H = 800;
+
+// нормализованные координаты (0..1) для ресайза
+let openedFromShare = false;    // режим открыт по ссылке
+let sharedRectNorm = null;      // {x,y,w,h} из шары
+let rectNormLive = null;        // текущие доли в редакторе
 
 /* ===== helpers ===== */
 function resetLottieUI(){
@@ -46,6 +49,7 @@ function resetLottieUI(){
   document.body.style.cursor='';
   window.getSelection?.().removeAllRanges?.();
 }
+
 function applyLottieRectFromNorm(rect){
   if (!rect) return;
   const s = stage.getBoundingClientRect();
@@ -56,6 +60,18 @@ function applyLottieRectFromNorm(rect){
     height: (rect.h * s.height) + 'px'
   });
 }
+
+function computeRectNormFromCurrent(){
+  const s = stage.getBoundingClientRect();
+  const r = lottieWrap.getBoundingClientRect();
+  return {
+    x: (r.left - s.left) / s.width,
+    y: (r.top  - s.top)  / s.height,
+    w:  r.width / s.width,
+    h:  r.height/ s.height
+  };
+}
+
 // сброс размеров/позиции лотти-контейнера к дефолту
 function resetLottieRectToDefaults(){
   lottieWrap.style.left = '40px';
@@ -73,6 +89,7 @@ function clearLottie(){
   lottieWrap.classList.add('hidden');
   lottieFileInput.value = '';
   currentLottieJsonText = null;
+  // сбрасывать norm не будем — редактор может перезаписать сам
 }
 
 function parseNumberWithUnits(v){ if(v==null) return null; const n=parseFloat(String(v).replace(',','.')); return isFinite(n)?n:null; }
@@ -263,7 +280,7 @@ lottieFileInput.addEventListener('change', e=>{
   const f=e.target.files?.[0]; if(!f) return;
   const r=new FileReader();
   r.onload=ev=>{
-    currentLottieJsonText = ev.target.result; // ★ сохраняем текст
+    currentLottieJsonText = ev.target.result; // сохраняем текст
     const json=JSON.parse(currentLottieJsonText);
     if(animation) animation.destroy();
     lottieContainer.innerHTML='';
@@ -271,6 +288,9 @@ lottieFileInput.addEventListener('change', e=>{
     lottieWrap.classList.remove('hidden');
     if(!framedMode) layoutToBaseFrame();
     animation=lottie.loadAnimation({container:lottieContainer,renderer:'svg',loop:true,autoplay:true,animationData:json});
+    // зафиксируем стартовые доли для ресайза
+    rectNormLive = computeRectNormFromCurrent();
+    openedFromShare = false; // это локальная работа, не режим шары
   };
   r.readAsText(f);
   lottieFileInput.value='';
@@ -283,15 +303,14 @@ lottieWrap.addEventListener('mousedown', e=>{
   const rect=lottieWrap.getBoundingClientRect(); dx=e.clientX-rect.left; dy=e.clientY-rect.top;
   lottieWrap.style.cursor='grabbing'; e.preventDefault();
 });
-window.addEventListener('resize', () => {
-  if (framedMode) layoutToBaseFrame();
-  // если открыты по ссылке — пересчитываем px из нормализованных долей
-  if (openedFromShare && sharedRectNorm) {
-    applyLottieRectFromNorm(sharedRectNorm);
-  }
+window.addEventListener('mousemove', e=>{
+  if(!dragging) return;
+  const r=stage.getBoundingClientRect();
+  let x=e.clientX-r.left-dx, y=e.clientY-r.top-dy;
+  x=Math.max(0, Math.min(x, r.width - lottieWrap.offsetWidth));
+  y=Math.max(0, Math.min(y, r.height- lottieWrap.offsetHeight));
+  lottieWrap.style.left=x+'px'; lottieWrap.style.top=y+'px';
 });
-
-
 const MIN_W=60, MIN_H=60; let resizing=null;
 function getCursorForDir(dir){return ({nw:'nwse-resize',se:'nwse-resize',ne:'nesw-resize',sw:'nesw-resize',n:'ns-resize',s:'ns-resize',w:'ew-resize',e:'ew-resize'})[dir]||'default';}
 function startResize(dir,e){
@@ -323,6 +342,10 @@ window.addEventListener('mouseup', ()=>{
   if(dragging || resizing){
     dragging=false; resizing=null; document.body.style.cursor='';
     lottieWrap.classList.remove('active'); lottieWrap.style.cursor='grab';
+    // после любого перемещения/ресайза — обновим нормализованные доли
+    if (!lottieWrap.classList.contains('hidden')) {
+      rectNormLive = computeRectNormFromCurrent();
+    }
   }
 });
 window.addEventListener('keydown', (e)=>{ if(e.key==='Escape'){ resetLottieUI(); } });
@@ -337,7 +360,15 @@ document.getElementById('btnClear').addEventListener('click', ()=>{
   layoutToEmpty(); lottieFileInput.value=''; assetFileInput.value=''; bgFileInput.value='';
 });
 
-window.addEventListener('resize', ()=>{ if(framedMode) layoutToBaseFrame(); });
+// ЕДИНСТВЕННЫЙ обработчик ресайза окна
+window.addEventListener('resize', () => {
+  if (framedMode) layoutToBaseFrame();
+  // если есть актуальные доли — применим
+  const rectToUse = rectNormLive || (openedFromShare ? sharedRectNorm : null);
+  if (!lottieWrap.classList.contains('hidden') && rectToUse) {
+    applyLottieRectFromNorm(rectToUse);
+  }
+});
 
 /* стартуем пустыми */
 setDesktopBase();
@@ -467,17 +498,10 @@ async function createShare(){
       alert('Добавь Lottie JSON перед шарингом.');
       return;
     }
+
     // нормализуем позицию/размер относительно текущего stage
-    const lottieRect = (() => {
-      const r = lottieWrap.getBoundingClientRect();
-      const s = stage.getBoundingClientRect();
-      return {
-        x: (r.left - s.left) / s.width,
-        y: (r.top  - s.top)  / s.height,
-        w: r.width  / s.width,
-        h: r.height / s.height
-      };
-    })();
+    const lottieRect = rectNormLive || computeRectNormFromCurrent();
+
     const lottieUrl = await uploadToBucket(new File([currentLottieJsonText], 'anim.json', { type: 'application/json' }));
 
     const projectJson = {
@@ -521,7 +545,7 @@ async function createShare(){
     bgLayer.style.backgroundImage = pj.backgroundUrl ? `url("${pj.backgroundUrl}")` : '';
 
     // 3) Режим и базовые размеры — сразу строим фрейм,
-    //    чтобы знать актуальные размеры stage (нужно для пересчёта нормализованных координат)
+    //    чтобы знать актуальные размеры stage
     MODE   = pj.mode  || 'desktop';
     BASE_W = pj.baseW || 1440;
     BASE_H = pj.baseH || 800;
@@ -538,40 +562,19 @@ async function createShare(){
       mountSVG(pj.foreground.svgText);
     }
 
-    // 6) Lottie (загружаем JSON, применяем нормализованные координаты, запускаем)
+    // 6) Lottie
     if (pj.lottie?.url && pj.lottie?.rect) {
-    const resp = await fetch(pj.lottie.url, { cache: 'no-store' });
-    const animJson = await resp.json();
-    
-    openedFromShare = true;
-    sharedRectNorm = pj.lottie.rect;
-    
-    lottieWrap.classList.remove('hidden');
-    applyLottieRectFromNorm(sharedRectNorm);
-    
-    animation = lottie.loadAnimation({
-      container: lottieContainer,
-      renderer:  pj.lottie.renderer || 'svg',
-      loop:      pj.lottie.loop !== false,
-      autoplay:  pj.lottie.autoplay !== false,
-      animationData: animJson
-    });
-    currentLottieJsonText = JSON.stringify(animJson);
+      const resp = await fetch(pj.lottie.url, { cache: 'no-store' });
+      if (!resp.ok) throw new Error('Failed to fetch lottie json: ' + resp.status);
+      const animJson = await resp.json();
 
-      // показываем контейнер
+      openedFromShare = true;
+      sharedRectNorm = pj.lottie.rect;
+      rectNormLive = sharedRectNorm; // единый источник для ресайза
+
       lottieWrap.classList.remove('hidden');
+      applyLottieRectFromNorm(rectNormLive);
 
-      // пересчёт нормализованных координат в пиксели текущего stage
-      const s = stage.getBoundingClientRect();
-      const r = pj.lottie.rect; // { x, y, w, h } в долях
-      Object.assign(lottieWrap.style, {
-        left:   (r.x * s.width)  + 'px',
-        top:    (r.y * s.height) + 'px',
-        width:  (r.w * s.width)  + 'px',
-        height: (r.h * s.height) + 'px'
-      });
-
-      // инициализация анимации
       animation = lottie.loadAnimation({
         container: lottieContainer,
         renderer:  pj.lottie.renderer || 'svg',
@@ -580,7 +583,6 @@ async function createShare(){
         animationData: animJson
       });
 
-      // сохраним текст, чтобы при повторном "Поделиться" не требовать повторную загрузку
       currentLottieJsonText = JSON.stringify(animJson);
     }
   }catch(e){
@@ -588,8 +590,3 @@ async function createShare(){
     alert('Ссылка недоступна или повреждена.');
   }
 })();
-
-
-
-
-
