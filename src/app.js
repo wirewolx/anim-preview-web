@@ -11,7 +11,7 @@ const URL_TOKEN  = new URLSearchParams(location.search).get('share') || null;
 let   SHARE_TOKEN = localStorage.getItem(STORAGE_TOKEN_KEY) || null;
 const isViewer = () => URL_TOKEN && URL_TOKEN !== SHARE_TOKEN;
 
-// ---- Appwrite client (создаём ДО любых вызовов) ----
+// ---- Appwrite client ----
 const awClient  = new Appwrite.Client().setEndpoint(APPWRITE_ENDPOINT).setProject(APPWRITE_PROJECT);
 const awAccount = new Appwrite.Account(awClient);
 const awDB      = new Appwrite.Databases(awClient);
@@ -20,16 +20,11 @@ const awStorage = new Appwrite.Storage(awClient);
 // анонимная сессия + авто-создание документа и подмена URL
 (async () => {
   try { await awAccount.get(); } catch { await awAccount.createAnonymousSession(); }
-
   if (!URL_TOKEN) {
     try {
-      await ensureShareDoc();                         // создаст и сохранит SHARE_TOKEN при первом заходе
-      if (SHARE_TOKEN) {
-        history.replaceState(null, '', `${location.pathname}?share=${SHARE_TOKEN}`);
-      }
-    } catch (e) {
-      console.error('ensureShareDoc failed', e);
-    }
+      await ensureShareDoc();
+      if (SHARE_TOKEN) history.replaceState(null, '', `${location.pathname}?share=${SHARE_TOKEN}`);
+    } catch (e) { console.error('ensureShareDoc failed', e); }
   }
 })();
 
@@ -281,17 +276,11 @@ window.addEventListener('paste', async e=>{
   for(const it of items){
     if(it.type==='image/svg+xml'){
       const f=it.getAsFile();
-      if(f){
-        clearLottie();
-        mountSVG(await readFileAsText(f));
-        e.preventDefault(); return;
-      }
+      if(f){ clearLottie(); mountSVG(await readFileAsText(f)); e.preventDefault(); return; }
     }
   }
   const text=e.clipboardData?.getData('text/plain');
-  if(text && /<svg[\s>]/i.test(text)){
-    clearLottie(); mountSVG(text); e.preventDefault(); return;
-  }
+  if(text && /<svg[\s>]/i.test(text)){ clearLottie(); mountSVG(text); e.preventDefault(); return; }
   if(text && (text.startsWith('data:image/') || /^(https?:\/\/).+\.(png|jpe?g|webp|gif)(\?.*)?$/i.test(text))){
     clearLottie(); await mountForegroundImage(text); e.preventDefault(); return;
   }
@@ -386,6 +375,20 @@ window.addEventListener('keydown', e=>{ if(e.key==='Escape'){ resetLottieUI(); }
 
 lottieClose.addEventListener('click', ()=>{ clearLottie(); });
 
+// ---- FIX: кнопка Очистить ----
+document.getElementById('btnClear').addEventListener('click', ()=>{
+  if (READ_ONLY) return;
+  clearMount();
+  clearLottie();
+  bgLayer.style.backgroundImage = '';
+  setDesktopBase();
+  layoutToEmpty();
+  // сброс внутренних норм-координат
+  rectNormLive   = null;
+  sharedRectNorm = null;
+  openedFromShare = false;
+});
+
 // ЕДИНСТВЕННЫЙ обработчик ресайза
 window.addEventListener('resize', ()=>{
   if (framedMode) layoutToBaseFrame();
@@ -479,15 +482,9 @@ async function createShare(){
     } else if (fgSvg){
       const svgText = new XMLSerializer().serializeToString(fgSvg);
       foreground = { type:'svg', svgText };
-    } else {
-      alert('Добавь картинку или SVG перед шарингом.');
-      return;
-    }
+    } else { alert('Добавь картинку или SVG перед шарингом.'); return; }
 
-    if (!currentLottieJsonText){
-      alert('Добавь Lottie JSON перед шарингом.');
-      return;
-    }
+    if (!currentLottieJsonText){ alert('Добавь Lottie JSON перед шарингом.'); return; }
 
     const lottieRect = rectNormLive || computeRectNormFromCurrent();
     const lottieUrl  = await uploadToBucket(new File([currentLottieJsonText], 'anim.json', { type:'application/json' }));
@@ -564,8 +561,3 @@ async function createShare(){
     alert('Ссылка недоступна или повреждена.');
   }
 })();
-
-/* ===== utils for WEBP ===== */
-function extractCssUrl(v){ if(!v) return null; const m=v.match(/url\(["']?(.*?)["']?\)/i); return m?m[1]:null; }
-
-// ===== END
