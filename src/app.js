@@ -169,8 +169,18 @@ function layoutToBaseFrame() {
   const sh = Math.round(BASE_H*s);
   const bw = sw, bh = Math.round(ch + sh);
 
-  const left = Math.max(g + sidebar + 16, Math.round((window.innerWidth - bw)/2));
-  const top  = Math.max(g, Math.round((window.innerHeight - bh)/2));
+  let left, top;
+  
+  // если есть боковая панель (sidebar > 0), центрируем с учётом её;
+  // если нет — строго по центру окна
+  if (sidebar > 0) {
+    left = Math.max(g + sidebar + 16, Math.round((window.innerWidth - bw) / 2));
+  } else {
+    left = Math.round((window.innerWidth - bw) / 2);
+  }
+  
+  top = Math.round((window.innerHeight - bh) / 2);
+
 
   Object.assign(browserEl.style, { width: bw + 'px', height: bh + 'px', left: left + 'px', top: top + 'px', right: 'auto', bottom: 'auto' });
   Object.assign(stage.style, { flex:'0 0 auto', height: sh + 'px', width: '100%' });
@@ -625,6 +635,7 @@ async function createShare(){
     alert('Ссылка недоступна или повреждена.');
   }
 })();
+
 
 
 
