@@ -8,7 +8,25 @@ const BUCKET_ID = 'project-assets';
 const STORAGE_TOKEN_KEY = 'shareToken';
 const URL_TOKEN = new URLSearchParams(location.search).get('share') || null;
 let SHARE_TOKEN = localStorage.getItem(STORAGE_TOKEN_KEY) || null;
+// кто зритель: в URL есть токен, и он не совпадает с локальным токеном редактора
+const isViewer = () => URL_TOKEN && URL_TOKEN !== SHARE_TOKEN;
 
+(async () => {
+  try { await awAccount.get(); } catch { await awAccount.createAnonymousSession(); }
+
+  // если открыли редактор без ?share= — создаём документ
+  // и сразу подставляем токен в адресную строку (без перезагрузки)
+  if (!URL_TOKEN) {
+    try {
+      await ensureShareDoc();
+      if (SHARE_TOKEN) {
+        history.replaceState(null, '', `${location.pathname}?share=${SHARE_TOKEN}`);
+      }
+    } catch (e) {
+      console.error('ensureShareDoc failed', e);
+    }
+  }
+})();
 const awClient  = new Appwrite.Client().setEndpoint(APPWRITE_ENDPOINT).setProject(APPWRITE_PROJECT);
 const awAccount = new Appwrite.Account(awClient);
 const awDB      = new Appwrite.Databases(awClient);
@@ -518,21 +536,17 @@ async function ensureShareDoc() {
     backgroundUrl: null, foreground: null, lottie: null, schemaVersion: 2
   };
 
-  await awDB.createDocument(
-    DB_ID,
-    SHARES_TABLE,
-    token,
-    {
-      projectJson: JSON.stringify(projectJson),
-      createdAt: now,
-      revoked: false
-    },
-    [
-      Appwrite.Permission.read(Appwrite.Role.any()),
-      Appwrite.Permission.update(Appwrite.Role.any())
-      // (delete не даём)
-    ]
-  );
+  await awDB.createDocument(DB_ID, SHARES_TABLE, token, {
+    projectJson: JSON.stringify(projectJson),
+    createdAt: now,
+    revoked: false
+  });
+
+  SHARE_TOKEN = token;
+  localStorage.setItem(STORAGE_TOKEN_KEY, token);
+  return token;
+}
+
 
   SHARE_TOKEN = token;
   localStorage.setItem(STORAGE_TOKEN_KEY, token);
@@ -541,11 +555,14 @@ async function ensureShareDoc() {
 /* ===== Поделиться ===== */
 document.getElementById('btnShare').addEventListener('click', ()=>{ if (READ_ONLY) return; createShare(); });
 
-async function createShare(){
-  try{
-    // 0) гарантируем постоянный токен проекта (создаст 1 раз, потом вернёт из localStorage)
-    const token = await ensureShareDoc();
+document.getElementById('btnShare').addEventListener('click', () => {
+  if (READ_ONLY) return;
+  createShare();
+});
 
+async function createShare() {
+  const token = await ensureShareDoc();            // гарантируем, что токен есть
+  try {
     // фон
     const bgRaw = extractCssUrl(bgLayer.style.backgroundImage);
     let backgroundUrl = null;
@@ -573,6 +590,40 @@ async function createShare(){
       alert('Добавь картинку или SVG перед шарингом.');
       return;
     }
+
+    if (!currentLottieJsonText) {
+      alert('Добавь Lottie JSON перед шарингом.');
+      return;
+    }
+
+    // нормализованные доли лотти
+    const lottieRect = rectNormLive || computeRectNormFromCurrent();
+
+    const lottieUrl  = await uploadToBucket(
+      new File([currentLottieJsonText], 'anim.json', { type: 'application/json' })
+    );
+
+    const projectJson = {
+      mode: MODE, baseW: BASE_W, baseH: BASE_H,
+      backgroundUrl,
+      foreground,
+      lottie: { url: lottieUrl, rect: lottieRect, renderer: 'svg', loop: true, autoplay: true },
+      schemaVersion: 2
+    };
+
+    // ВАЖНО: обновляем существующий документ (НЕ createDocument)
+    await awDB.updateDocument(DB_ID, SHARES_TABLE, token, {
+      projectJson: JSON.stringify(projectJson)
+    });
+
+    const link = `${location.origin}${location.pathname}?share=${token}`;
+    await copyToClipboard(link);
+    alert('Ссылка скопирована:\n' + link);
+  } catch (err) {
+    console.error(err);
+    alert('Не получилось создать ссылку. Открой консоль для деталей.');
+  }
+}
 
     // Lottie обязателен
     if (!currentLottieJsonText) {
@@ -627,7 +678,7 @@ async function createShare(){
     BASE_H = pj.baseH || 800;
 
     // 3) viewer
-    setReadOnly(true);
+    setReadOnly(isViewer());
     openedFromShare = true;
 
     // 4) фон
@@ -673,4 +724,5 @@ async function createShare(){
     alert('Ссылка недоступна или повреждена.');
   }
 })();
+
 
