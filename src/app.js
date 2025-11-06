@@ -330,3 +330,119 @@ const lottie = window.lottie;
     /* стартуем пустыми */
     setDesktopBase();
     layoutToEmpty();
+// === Настройки сжатия ===
+const WEBP_QUALITY = 0.82;     // 0..1
+const MAX_W = 1920;            // макс. ширина после ресайза
+const MAX_H = 1080;            // макс. высота после ресайза
+
+// === DOM ===
+const fileInput   = document.getElementById('fileInput');
+const previewImg  = document.getElementById('preview');
+const downloadA   = document.getElementById('downloadLink');
+const infoSpan    = document.getElementById('info');
+const resultBox   = document.getElementById('result');
+
+// Слушатели
+fileInput.addEventListener('change', (e) => {
+  const files = e.target.files;
+  if (files && files[0]) handleFile(files[0]);
+});
+
+// Вставка из буфера обмена (Ctrl+V / Cmd+V)
+document.addEventListener('paste', async (e) => {
+  // Новый API (ClipboardItems)
+  if (e.clipboardData && e.clipboardData.items) {
+    const item = [...e.clipboardData.items].find(i => i.type.startsWith('image/'));
+    if (item) {
+      e.preventDefault();
+      const file = item.getAsFile();
+      if (file) handleFile(file);
+      return;
+    }
+  }
+  // Фолбэк (files)
+  if (e.clipboardData && e.clipboardData.files && e.clipboardData.files[0]) {
+    e.preventDefault();
+    handleFile(e.clipboardData.files[0]);
+  }
+});
+
+async function handleFile(file) {
+  try {
+    const webpBlob = await compressToWebP(file, { maxW: MAX_W, maxH: MAX_H, quality: WEBP_QUALITY });
+    const webpUrl  = URL.createObjectURL(webpBlob);
+
+    // Показываем превью и ссылку на скачивание
+    previewImg.src      = webpUrl;
+    downloadA.href      = webpUrl;
+    downloadA.download  = (stripExt(file.name) || 'image') + '.webp';
+    infoSpan.textContent = humanInfo(file, webpBlob);
+    resultBox.style.display = '';
+
+    // TODO: здесь можно сразу грузить webpBlob в твоё хранилище (Appwrite Bucket)
+  } catch (err) {
+    console.error(err);
+    alert('Не удалось сжать изображение.');
+  }
+}
+
+function stripExt(name='') {
+  const i = name.lastIndexOf('.');
+  return i > 0 ? name.slice(0, i) : name;
+}
+
+function humanInfo(origFile, newBlob) {
+  const kb = n => (n/1024).toFixed(1) + ' KB';
+  return `Было: ${kb(origFile.size)} (${origFile.type || 'image'}) → Стало: ${kb(newBlob.size)} (image/webp)`;
+}
+
+// Основная функция: файл → WebP (с учётом ресайза и EXIF-ориентации)
+async function compressToWebP(file, { maxW, maxH, quality }) {
+  // Пытаемся корректно учесть ориентацию через createImageBitmap
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch {
+    // Фолбэк: через <img>
+    const img = await loadHTMLImage(file);
+    // Превращаем в bitmap для унификации
+    bitmap = await createImageBitmap(img);
+  }
+
+  const { targetW, targetH } = fitContain(bitmap.width, bitmap.height, maxW, maxH);
+
+  const canvas = document.createElement('canvas');
+  canvas.width  = targetW;
+  canvas.height = targetH;
+
+  const ctx = canvas.getContext('2d', { alpha: true });
+  // Качественное масштабирование
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bitmap, 0, 0, targetW, targetH);
+
+  const blob = await canvasToBlob(canvas, 'image/webp', quality);
+  if (!blob) throw new Error('Canvas toBlob вернул null');
+  return blob;
+}
+
+function fitContain(w, h, maxW, maxH) {
+  let ratio = Math.min(maxW / w, maxH / h);
+  if (!isFinite(ratio) || ratio > 1) ratio = 1; // не увеличиваем
+  return { targetW: Math.round(w * ratio), targetH: Math.round(h * ratio) };
+}
+
+function loadHTMLImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+    img.src = url;
+  });
+}
+
+function canvasToBlob(canvas, type, quality) {
+  return new Promise(resolve => canvas.toBlob(resolve, type, quality));
+}
+
